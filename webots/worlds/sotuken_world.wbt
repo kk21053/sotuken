@@ -1,0 +1,225 @@
+#VRML_SIM R2025a utf8
+EXTERNPROTO "../protos/vendor/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "../protos/vendor/projects/robots/boston_dynamics/spot/protos/Spot.proto"
+EXTERNPROTO "../protos/custom/SandPatch.proto"
+EXTERNPROTO "../protos/vendor/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+
+DEF WORLD_INFO WorldInfo {
+  basicTimeStep 16
+  contactProperties [
+    DEF SAND_CONTACT ContactProperties {
+      material1 "sand"
+      material2 "default"
+      coulombFriction 1.5
+      bounce 0
+    }
+    DEF TRAP_CONTACT ContactProperties {
+      material1 "trap"
+      material2 "default"
+      coulombFriction 2.5
+      bounce 0
+    }
+    DEF VINE_CONTACT ContactProperties {
+      material1 "vine"
+      material2 "default"
+      coulombFriction 2.0
+      bounce 0
+    }
+  ]
+}
+
+Viewpoint {
+  fieldOfView 1
+  near 0.1
+  far 100
+  orientation 0.256 -0.402 -0.879 5.26
+  position -6.32 -9.84 6.98
+  follow ""
+}
+
+Background {
+  skyColor [
+    0.4 0.7 1
+  ]
+}
+
+DirectionalLight {
+  ambientIntensity 0.5
+  direction 0.1 -0.5 0.3
+}
+
+RectangleArena {
+  floorSize 12 12
+}
+
+DEF SAND_PATCH SandPatch {
+  radius 0.22
+  height 0.14
+  color 0.85 0.72 0.48
+}
+
+DEF FOOT_TRAP Solid {
+
+  translation 0 0 -10
+  children [
+    Group {
+      children [
+        Transform {
+          translation 0 0.08 0.09
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.6 0.6 0.6
+                roughness 0.3
+                metalness 0.1
+              }
+              geometry Box {
+                size 0.2 0.02 0.18
+              }
+            }
+          ]
+        }
+        Transform {
+          translation 0 -0.08 0.09
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.6 0.6 0.6
+                roughness 0.3
+                metalness 0.1
+              }
+              geometry Box {
+                size 0.2 0.02 0.18
+              }
+            }
+          ]
+        }
+        Transform {
+          translation 0 0 0.03
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.4 0.4 0.4
+                roughness 0.6
+                metalness 0.05
+              }
+              geometry Box {
+                size 0.2 0.16 0.06
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+  contactMaterial "trap"
+  boundingObject Group {
+    children [
+      Transform {
+        translation 0 0.08 0.09
+        children [
+          Box {
+            size 0.2 0.02 0.18
+          }
+        ]
+      }
+      Transform {
+        translation 0 -0.08 0.09
+        children [
+          Box {
+            size 0.2 0.02 0.18
+          }
+        ]
+      }
+      Transform {
+        translation 0 0 0.03
+        children [
+          Box {
+            size 0.2 0.16 0.06
+          }
+        ]
+      }
+    ]
+  }
+  locked TRUE
+}
+
+DEF FOOT_VINE Solid {
+  translation 0 0 -10
+  name "vine restraint"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.6 0.1
+        roughness 0.8
+        metalness 0
+      }
+      geometry Capsule {
+        radius 0.025
+        height 0.3
+      }
+    }
+    Transform {
+      rotation 0 0 1 1.5708
+      children [
+        Shape {
+          appearance PBRAppearance {
+            baseColor 0.12 0.55 0.12
+            roughness 0.8
+            metalness 0
+          }
+          geometry Capsule {
+            radius 0.02
+            height 0.28
+          }
+        }
+      ]
+    }
+  ]
+  contactMaterial "vine"
+  boundingObject Group {
+    children [
+      Capsule {
+        radius 0.025
+        height 0.3
+      }
+      Transform {
+        rotation 0 0 1 1.5708
+        children [
+          Capsule {
+            radius 0.02
+            height 0.28
+          }
+        ]
+      }
+    ]
+  }
+  locked TRUE
+}
+
+DEF ENVIRONMENT_MANAGER Robot {
+  supervisor TRUE
+  controller "environment_manager"
+  translation 0 0 0
+  rotation 0 1 0 0
+  children [ ]
+}
+
+DEF SPOT Spot {
+  translation 0 0 0.43
+  rotation 0 1 0 0
+  controller ""
+}
+
+DEF DRONE Mavic2Pro {
+  translation 3 0 3
+  rotation 0 0 1 1.57
+  controller "drone_circular_controller"
+  supervisor TRUE
+  controllerArgs [
+    "--radius=3.5"
+    "--height=3.0"
+    "--period=25.0"
+    "--center-def=SPOT"
+  ]
+}

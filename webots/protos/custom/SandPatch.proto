@@ -1,0 +1,36 @@
+#VRML_SIM R2025a utf8
+# Simple sand patch that can be repositioned to emulate a buried foothold.
+
+PROTO SandPatch [
+  field SFVec3f translation      0 0 -10
+  field SFRotation rotation      0 0 1 0
+  field SFFloat radius           0.2
+  field SFFloat height           0.12
+  field SFColor color            0.82 0.7 0.45
+  field SFString contactMaterial "sand"
+] {
+  Solid {
+    translation IS translation
+    rotation IS rotation
+    children [
+      Shape {
+        appearance PBRAppearance {
+          baseColor IS color
+          roughness 0.9
+          metalness 0
+        }
+        geometry Cylinder {
+          radius IS radius
+          height IS height
+        }
+      }
+    ]
+    name "sand patch"
+    contactMaterial IS contactMaterial
+    boundingObject Cylinder {
+      radius IS radius
+      height IS height
+    }
+    locked TRUE
+  }
+}
