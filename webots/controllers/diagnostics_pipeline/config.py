@@ -7,7 +7,7 @@ CAUSE_LABELS: Tuple[str, str, str, str] = ("NONE", "BURIED", "TRAPPED", "ENTANGL
 
 TRIAL_COUNT: int = 4
 TRIAL_PATTERN: Tuple[str, str, str, str] = ("+", "+", "-", "-")
-TRIAL_DURATION_S: float = 0.5
+TRIAL_DURATION_S: float = 0.5  # Standard duration for stable operation
 TRIAL_ANGLE_DEG: float = 7.0
 
 SELF_WEIGHTS = {
