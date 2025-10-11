@@ -91,6 +91,48 @@ class SpotDiagnosticsController:
                     self.motors[leg_id].append(None)
                     self.sensors[leg_id].append(None)
     
+    def get_safe_angle_range(self, motor, sensor, motor_index, leg_id):
+        """Calculate safe angle range based on current position and motor limits.
+        
+        Returns:
+            (safe_positive_angle, safe_negative_angle) in degrees
+        """
+        if not motor or not sensor:
+            return (0.0, 0.0)
+        
+        # Get current position
+        current_pos = sensor.getValue()  # radians
+        current_deg = math.degrees(current_pos)
+        
+        # Get motor limits (min/max position)
+        min_pos = motor.getMinPosition()
+        max_pos = motor.getMaxPosition()
+        
+        # Handle infinite limits (unlimited range)
+        if min_pos == float('-inf'):
+            min_pos = current_pos - math.radians(30)  # Default to ±30° safety margin
+        if max_pos == float('inf'):
+            max_pos = current_pos + math.radians(30)
+        
+        # Calculate available range in both directions
+        min_deg = math.degrees(min_pos)
+        max_deg = math.degrees(max_pos)
+        
+        # Calculate safe movement range (leave 5° safety margin from limits)
+        safety_margin = 5.0
+        safe_positive_range = max_deg - current_deg - safety_margin
+        safe_negative_range = current_deg - min_deg - safety_margin
+        
+        # Clamp to reasonable values (0 to 30 degrees)
+        safe_positive_angle = max(0.0, min(30.0, safe_positive_range))
+        safe_negative_angle = max(0.0, min(30.0, safe_negative_range))
+        
+        print(f"[spot] {leg_id} motor[{motor_index}]: current={current_deg:.1f}°, "
+              f"range=[{min_deg:.1f}°, {max_deg:.1f}°], "
+              f"safe_move=[+{safe_positive_angle:.1f}°, -{safe_negative_angle:.1f}°]")
+        
+        return (safe_positive_angle, safe_negative_angle)
+    
     def send_trigger(self, leg_id, trial_index, direction, start_time, duration_ms):
         """Send trigger message to drone."""
         if self.emitter is None:
@@ -115,11 +157,42 @@ class SpotDiagnosticsController:
             print(f"[spot] No motors available for leg {leg_id}")
             return False
         
-        # Calculate movement parameters - prioritize stability
-        sign = 1.0 if direction == "+" else -1.0
-        # Use 3 degrees for stability (prevents tipping)
-        safe_angle = 3.0
+        # Motor selection strategy:
+        # - All legs: use shoulder abduction (index 0) - stable and reliable
+        motor_index = 0  # Shoulder abduction - lateral movement
+        
+        if len(leg_motors) > motor_index and leg_motors[motor_index]:
+            target_motor = leg_motors[motor_index]
+            target_sensor = leg_sensors[motor_index] if len(leg_sensors) > motor_index else None
+        else:
+            print(f"[spot] Warning: Motor index {motor_index} not available for {leg_id}")
+            return False
+        
+        # Get safe angle range based on current position and motor limits
+        safe_pos_angle, safe_neg_angle = self.get_safe_angle_range(
+            target_motor, target_sensor, motor_index, leg_id
+        )
+        
+        # Determine safe movement angle based on direction
+        # Use smaller angles (max 5°) for stability
+        max_safe_angle = 5.0  # Conservative limit to prevent tipping
+        
+        if direction == "+":
+            if safe_pos_angle < 0.5:
+                print(f"[spot] {leg_id}: Cannot move positive (only {safe_pos_angle:.2f}° available)")
+                return False
+            safe_angle = min(safe_pos_angle, max_safe_angle)
+            sign = 1.0
+        else:
+            if safe_neg_angle < 0.5:
+                print(f"[spot] {leg_id}: Cannot move negative (only {safe_neg_angle:.2f}° available)")
+                return False
+            safe_angle = min(safe_neg_angle, max_safe_angle)
+            sign = -1.0
+        
         angle_rad = math.radians(safe_angle * sign)
+        
+        print(f"[spot] {leg_id} Trial {trial_index}: Using safe angle {safe_angle:.2f}° ({direction})")
         
         # Send trigger to drone BEFORE starting movement
         current_time = self.robot.getTime()
@@ -136,35 +209,42 @@ class SpotDiagnosticsController:
         self.trial_start_time = current_time
         self.trial_state = "EXECUTING"
         
-        # Motor selection strategy:
-        # - FL leg (buried in sand): use shoulder rotation (index 1) for better sand detection
-        # - Other legs: use shoulder abduction (index 0) to avoid physical constraints
+        if target_motor and target_sensor:
+            # Get initial position
+            initial_pos = target_sensor.getValue()
+            target_pos = initial_pos + angle_rad
+            
+            # Debug log
+            print(f"[spot] {leg_id} Trial {trial_index}: initial={math.degrees(initial_pos):.3f}°, "
+                  f"target={math.degrees(target_pos):.3f}°, change={math.degrees(angle_rad):.3f}°")
+            
+            # Set target position with conservative velocity for stability
+            target_motor.setPosition(target_pos)
+            # Use 20% velocity for stable, safe movement
+            target_motor.setVelocity(target_motor.getMaxVelocity() * 0.2)
+        
+        return True
+    
+    def _reset_leg_position(self, leg_id):
+        """Reset leg motor to initial position (0°) after trial.
+        This prevents cumulative angle issues causing physical constraints."""
+        leg_motors = self.motors.get(leg_id, [])
+        
+        # Determine which motor was used (same logic as execute_trial)
         if leg_id == "FL":
-            motor_index = 1  # Shoulder rotation - better for sand detection
+            motor_index = 1  # Shoulder rotation
         else:
-            motor_index = 0  # Shoulder abduction - more reliable across postures
+            motor_index = 0  # Shoulder abduction
         
         if len(leg_motors) > motor_index and leg_motors[motor_index]:
             target_motor = leg_motors[motor_index]
-            target_sensor = leg_sensors[motor_index] if len(leg_sensors) > motor_index else None
-        else:
-            print(f"[spot] Warning: Motor index {motor_index} not available for {leg_id}")
-            return False
-        
-        if target_motor:
-            # Get initial position
-            initial_pos = target_sensor.getValue() if target_sensor else 0.0
-            target_pos = initial_pos + angle_rad
-            
-            # Debug log for investigation
-            print(f"[spot] {leg_id} Trial {trial_index}: initial_pos={math.degrees(initial_pos):.3f}°, target={math.degrees(target_pos):.3f}°, angle_change={math.degrees(angle_rad):.3f}°")
-            
-            # Set target position with slow, safe velocity
-            target_motor.setPosition(target_pos)
-            # Use 10% of max velocity for safe, stable movement
+            # Reset to 0° position
+            target_motor.setPosition(0.0)
+            # Use same velocity as trials for smooth reset
             target_motor.setVelocity(target_motor.getMaxVelocity() * 0.10)
-        
-        return True
+            print(f"[spot] {leg_id}: Resetting motor {motor_index} to 0°")
+        else:
+            print(f"[spot] Warning: Cannot reset {leg_id}, motor {motor_index} not available")
     
     def measure_trial_data(self, leg_id):
         """Collect sensor data during trial execution."""
@@ -172,11 +252,17 @@ class SpotDiagnosticsController:
         if not leg_sensors or not any(leg_sensors):
             return
         
-        # Measure from shoulder abduction sensor (index 0) for consistency
-        if len(leg_sensors) > 0 and leg_sensors[0]:
-            sensor = leg_sensors[0]
+        # Measure from the same motor index used in execute_trial
+        # FL uses rotation (index 1), others use abduction (index 0)
+        if leg_id == "FL":
+            motor_index = 1
         else:
-            print(f"[spot] Warning: No sensor available for {leg_id}")
+            motor_index = 0
+        
+        if len(leg_sensors) > motor_index and leg_sensors[motor_index]:
+            sensor = leg_sensors[motor_index]
+        else:
+            print(f"[spot] Warning: No sensor {motor_index} available for {leg_id}")
             return
         
         if sensor:
