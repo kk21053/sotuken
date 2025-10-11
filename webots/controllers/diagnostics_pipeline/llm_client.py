@@ -37,10 +37,13 @@ class LLMAnalyzer:
         self._model_name: Optional[str] = None
 
     def _ensure_pipeline(self) -> None:
-        if self._pipeline is not None:
+        if self._pipeline is not None or self._model_name == "stub":
             return
         if pipeline is None:
-            raise RuntimeError("transformers is not installed")
+            print("[llm] transformers not available; using uniform fallback")
+            self._pipeline = None
+            self._model_name = "stub"
+            return
 
         for name in self.model_priority:
             try:
@@ -106,6 +109,9 @@ class LLMAnalyzer:
 
     def _invoke_model(self, leg: LegState) -> str:
         self._ensure_pipeline()
+        if self._pipeline is None:
+            return self._uniform_payload()
+
         prompt = self._build_prompt(leg)
         outputs = self._pipeline(
             prompt,
@@ -117,6 +123,11 @@ class LLMAnalyzer:
             raise RuntimeError("empty LLM output")
         text = outputs[0]["generated_text"].strip()
         return text
+
+    def _uniform_payload(self) -> str:
+        uniform = 1.0 / len(config.CAUSE_LABELS)
+        payload = {"prob": {label: uniform for label in config.CAUSE_LABELS}}
+        return json.dumps(payload)
 
     def _parse_payload(self, payload: str) -> Dict[str, float]:
         try:

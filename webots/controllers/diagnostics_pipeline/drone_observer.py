@@ -107,8 +107,14 @@ class DroneObservationAggregator:
 
         effective_scores = scores[: config.TRIAL_COUNT]
         leg.drone_can = mean(effective_scores) if effective_scores else 0.0
-        leg.trials[-1].features_drone = features
-        leg.trials[-1].drone_can_raw = raw
+        
+        # Store trial if not already in leg.trials
+        if trial not in leg.trials:
+            leg.trials.append(trial)
+        
+        # Update trial features
+        trial.features_drone = features
+        trial.drone_can_raw = raw
 
         current_distribution = self._estimate_cause_distribution(features)
         accumulator = self._cause_accumulator.setdefault(
@@ -135,9 +141,19 @@ class DroneObservationAggregator:
         disp_norm = clamp(end_disp / 0.12)
         path_factor = clamp(path_length / (end_disp + config.EPSILON)) if end_disp > 0 else straightness
 
+        # TRAPPED: joint moves but foot doesn't (high joint_score, low disp_norm)
         score_trapped = clamp((joint_score - disp_norm) * 1.2)
+        
+        # ENTANGLED: irregular path with reversals
         score_entangled = clamp((path_factor - 1.2) + reversals * 0.1)
-        score_buried = clamp(max(0.0, (0.25 - base_height) * 3.0))
+        
+        # BURIED: very low end displacement (foot stuck in sand/debris)
+        # Use both low base_height AND low end_disp as indicators
+        base_factor = clamp(max(0.0, (0.25 - base_height) * 3.0))
+        disp_factor = clamp(max(0.0, (0.01 - end_disp) * 100.0))  # High score when disp < 1cm
+        score_buried = max(base_factor, disp_factor)
+        
+        # NONE: normal movement (high disp, low other scores)
         score_none = clamp(1.0 - max(score_trapped, score_entangled, score_buried) * 0.6)
 
         scores = {

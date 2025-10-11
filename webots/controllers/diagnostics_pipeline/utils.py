@@ -45,7 +45,7 @@ def normalize_distribution(distribution: Dict[str, float]) -> Dict[str, float]:
     total = sum(max(0.0, v) for v in distribution.values())
     if total <= config.EPSILON:
         return {k: 1.0 / len(distribution) for k in distribution}
-    return {k: max(0.0, v) / total for k in distribution}
+    return {key: max(0.0, value) / total for key, value in distribution.items()}
 
 
 def ensure_probability_keys(values: Dict[str, float], keys: Iterable[str]) -> Dict[str, float]:
