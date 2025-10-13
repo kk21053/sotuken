@@ -33,16 +33,14 @@ class DiagnosticsLogger:
             "duration": trial.duration,
             "self_can_raw_i": trial.self_can_raw,
             "drone_can_raw_i": trial.drone_can_raw,
-            "self_can": leg.self_can,
-            "self_moves": leg.self_moves,
+            "spot_can": leg.spot_can,
             "drone_can": leg.drone_can,
             "p_drone": leg.p_drone,
             "p_llm": leg.p_llm,
-            "p_final": leg.p_final,
+            "p_can": leg.p_can,
             "cause_final": leg.cause_final,
-            "conf_final": leg.conf_final,
+            "movement_result": leg.movement_result,
             "fallen": fallen,
-            "features_drone": trial.features_drone,
             "trial_ok": trial.ok,
         }
         self.event_writer.append(payload)
@@ -51,6 +49,7 @@ class DiagnosticsLogger:
         record = SessionRecord(
             session_id=session.session_id,
             fallen=session.fallen,
+            fallen_probability=session.fallen_probability,
             legs={leg_id: leg.snapshot() for leg_id, leg in session.legs.items()},
         )
         self.session_writer.append(record.to_dict())

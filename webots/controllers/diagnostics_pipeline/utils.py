@@ -14,19 +14,6 @@ def clamp(value: float, lower: float = 0.0, upper: float = 1.0) -> float:
     return max(lower, min(upper, value))
 
 
-def softmax(scores: Dict[str, float], temperature: float = config.SOFTMAX_TEMPERATURE) -> Dict[str, float]:
-    if not scores:
-        return {}
-    if temperature <= 0:
-        temperature = config.SOFTMAX_TEMPERATURE
-    max_score = max(scores.values())
-    exp_values = {k: math.exp((v - max_score) / temperature) for k, v in scores.items()}
-    total = sum(exp_values.values())
-    if total <= 0:
-        return {k: 1.0 / len(scores) for k in scores}
-    return {k: exp_values[k] / total for k in scores}
-
-
 class JsonlWriter:
     """Append JSON Lines entries to a file."""
 
