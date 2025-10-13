@@ -14,6 +14,7 @@ CAUSE_DEFINITIONS = {
     "TRAPPED": "関節は動くのに末端が障害物等に固定され前進できない状態",
     "TANGLED": "ツタなどに絡まり小さい往復でしか動けない状態",
     "MALFUNCTION": "センサー故障または測定エラー（物理的に矛盾する状態）",
+    "FALLEN": "ロボットが転倒しており正常な診断が困難な状態",
 }
 
 
@@ -63,27 +64,28 @@ class LLMAnalyzer:
         drone_can = leg.drone_can
         p_drone = dict(leg.p_drone)  # ドローンの確率分布をコピー
         
-        # ルール①: 両方が0.7以上 → 動く、拘束原因=正常
+                # ルール①: 両方が0.7以上 → 動く、拘束原因=正常
         if spot_can >= 0.7 and drone_can >= 0.7:
             leg.movement_result = "動く"
             leg.p_can = (spot_can + drone_can) / 2  # 平均を最終確率とする
             distribution = {
-                "NONE": 0.95,
+                "NONE": 0.94,
                 "BURIED": 0.01,
                 "TRAPPED": 0.01,
                 "TANGLED": 0.01,
                 "MALFUNCTION": 0.02,
+                "FALLEN": 0.01,
             }
             leg.p_llm = distribution
             leg.cause_final = "NONE"
             return distribution
         
-        # ルール②: 両方が0.3以下 → 動かない、拘束原因=確率分布の最大値
+        # ルール②: 両方が0.3以下 → 動かない、拘束原因=確率分布の最大値（NONE以外）
         elif spot_can <= 0.3 and drone_can <= 0.3:
             leg.movement_result = "動かない"
             leg.p_can = (spot_can + drone_can) / 2
             
-            # 確率分布から最大値を見つける（NONE以外）
+            # 確率分布から最大値を見つける（動かないのでNONE以外から選択）
             max_cause = max(
                 (v, k) for k, v in p_drone.items() if k != "NONE"
             )[1]
@@ -95,8 +97,9 @@ class LLMAnalyzer:
                 "TRAPPED": 0.02,
                 "TANGLED": 0.02,
                 "MALFUNCTION": 0.02,
+                "FALLEN": 0.01,
             }
-            distribution[max_cause] = 0.90
+            distribution[max_cause] = 0.89
             
             leg.p_llm = distribution
             leg.cause_final = max_cause
@@ -111,7 +114,8 @@ class LLMAnalyzer:
                 "BURIED": 0.02,
                 "TRAPPED": 0.02,
                 "TANGLED": 0.01,
-                "MALFUNCTION": 0.94,  # 故障を強く示唆
+                "MALFUNCTION": 0.93,  # 故障を強く示唆
+                "FALLEN": 0.01,
             }
             leg.p_llm = distribution
             leg.cause_final = "MALFUNCTION"
@@ -122,10 +126,8 @@ class LLMAnalyzer:
             leg.movement_result = "一部動く"
             leg.p_can = (spot_can + drone_can) / 2
             
-            # 確率分布から最大値を見つける（NONE以外）
-            max_cause = max(
-                (v, k) for k, v in p_drone.items() if k != "NONE"
-            )[1]
+            # 確率分布から最大値を見つける
+            max_cause = max(p_drone.items(), key=lambda x: x[1])[0]
             
             # 中間的な分布を作成（確信度は低め）
             distribution = {
@@ -134,8 +136,9 @@ class LLMAnalyzer:
                 "TRAPPED": 0.05,
                 "TANGLED": 0.05,
                 "MALFUNCTION": 0.05,
+                "FALLEN": 0.01,
             }
-            distribution[max_cause] = 0.70
+            distribution[max_cause] = 0.69
             
             leg.p_llm = distribution
             leg.cause_final = max_cause

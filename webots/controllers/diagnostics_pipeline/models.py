@@ -49,6 +49,11 @@ class LegState:
     movement_result: str = "一部動く"  # "動く" | "動かない" | "一部動く"
     cause_final: str = "NONE"
     p_can: float = 0.0  # 仕様ステップ7: 最終的な動作確率
+    expected_cause: str = "NONE"  # 期待される拘束原因（シナリオ設定から読み込み）
+    
+    # 各脚ごとの転倒検出（診断中に転倒した場合True）
+    fallen: bool = False
+    fallen_probability: float = 0.0
     
     trials: List[TrialResult] = field(default_factory=list)
 
@@ -62,6 +67,9 @@ class LegState:
             movement_result=self.movement_result,
             cause_final=self.cause_final,
             p_can=self.p_can,
+            expected_cause=self.expected_cause,
+            fallen=self.fallen,
+            fallen_probability=self.fallen_probability,
         )
 
 
@@ -91,6 +99,9 @@ class LegStatus:
     movement_result: str  # "動く" | "動かない" | "一部動く"
     cause_final: str
     p_can: float
+    expected_cause: str = "NONE"  # 期待される拘束原因（デフォルト: NONE）
+    fallen: bool = False  # この脚の診断中に転倒したか
+    fallen_probability: float = 0.0  # 転倒確率
 
 
 @dataclass
@@ -116,6 +127,9 @@ class SessionRecord:
                     "movement_result": leg.movement_result,
                     "cause_final": leg.cause_final,
                     "p_can": leg.p_can,
+                    "expected_cause": leg.expected_cause,
+                    "fallen": leg.fallen,
+                    "fallen_probability": leg.fallen_probability,
                 }
                 for leg_id, leg in self.legs.items()
             },

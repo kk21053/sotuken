@@ -14,6 +14,7 @@ if str(CONTROLLERS_ROOT) not in sys.path:
 from diagnostics_pipeline import config as diag_config
 from diagnostics_pipeline.pipeline import DiagnosticsPipeline
 from datetime import datetime
+import configparser
 
 
 class RoboPoseSimulator:
@@ -75,6 +76,13 @@ class DroneCircularController:
         self.pipeline = DiagnosticsPipeline(session_id)
         print(f"[drone] Pipeline initialized: {session_id}")
         
+        # Load expected causes from scenario.ini
+        self.expected_causes = self.load_expected_causes()
+        print(f"[drone] Expected causes: {self.expected_causes}")
+        
+        # Set expected causes in pipeline
+        self.pipeline.set_expected_causes(self.expected_causes)
+        
         # Parse command line arguments
         arguments = sys.argv[1:]
         self.offset_x, self.offset_y, self.offset_z, self.center_def = self.parse_arguments(arguments)
@@ -116,10 +124,43 @@ class DroneCircularController:
         for leg_id in diag_config.LEG_IDS:
             self.trials_completed[leg_id] = 0
         
+        # Load expected causes from scenario.ini
+        self.expected_causes = self.load_expected_causes()
+        print(f"[drone] Expected causes: {self.expected_causes}")
+        
         print("[drone] Controller initialized")
         print(f"[drone] Offset: ({self.offset_x:.2f}, {self.offset_y:.2f}, {self.offset_z:.2f})")
         print(f"[drone] Center: {self.center_def}")
         print(f"[drone] RoboPose FPS: {self.fps_current}")
+    
+    def load_expected_causes(self):
+        """Load expected causes from scenario.ini."""
+        config_path = Path(__file__).parent.parent.parent / "config" / "scenario.ini"
+        expected = {}
+        
+        if not config_path.exists():
+            print(f"[drone] Warning: scenario.ini not found at {config_path}")
+            return expected
+        
+        config = configparser.ConfigParser()
+        config.read(config_path)
+        
+        # Map leg IDs to config keys
+        leg_mapping = {
+            "FL": "fl_environment",
+            "FR": "fr_environment",
+            "RL": "rl_environment",
+            "RR": "rr_environment"
+        }
+        
+        for leg_id, config_key in leg_mapping.items():
+            if config.has_option("DEFAULT", config_key):
+                env_state = config.get("DEFAULT", config_key)
+                expected[leg_id] = env_state
+            else:
+                expected[leg_id] = "NONE"
+        
+        return expected
     
     def parse_arguments(self, arguments):
         """Parse command line arguments."""
@@ -373,24 +414,50 @@ class DroneCircularController:
         L1, L2, L3 = 0.11, 0.26, 0.26
         y_offset = -0.25 if 'L' in leg_id else 0.25
         
-        # Calculate initial foot position in world coordinates
-        # For simplicity, assume joint angles are zero initially
-        # In real system, first observation would provide initial joint angles
-        x_init_local = L2 + L3  # Leg extended forward
-        y_init_local = y_offset
-        z_init_local = 0.0
+        # Get initial body orientation
+        if self.robopose.spot_node:
+            initial_orientation = self.robopose.spot_node.getOrientation()
+            initial_roll = math.atan2(initial_orientation[7], initial_orientation[8])
+            initial_pitch = math.asin(-initial_orientation[6])
+            initial_yaw = math.atan2(initial_orientation[3], initial_orientation[0])
+        else:
+            initial_roll = initial_pitch = initial_yaw = 0.0
         
+        # Calculate initial foot position in body-local coordinates from first observation
+        # This gives us the true initial position based on actual joint angles
+        first_obs = observations[0]
+        first_joint_angles = first_obs.get("joint_angles", [0.0, 0.0, 0.0])
+        
+        theta1_init = math.radians(first_joint_angles[0])
+        theta2_init = math.radians(first_joint_angles[1])
+        theta3_init = math.radians(first_joint_angles[2])
+        
+        x_init_local = L2 * math.cos(theta2_init) + L3 * math.cos(theta2_init + theta3_init)
+        y_init_local = y_offset + L1 * math.sin(theta1_init)
+        z_init_local = -(L2 * math.sin(theta2_init) + L3 * math.sin(theta2_init + theta3_init))
+        
+        # Also calculate world position for logging
         x_init_world = initial_body_pos[0] + x_init_local
         y_init_world = initial_body_pos[1] + y_init_local
         z_init_world = initial_body_pos[2] + z_init_local
         
         print(f"[drone] {leg_id}: Initial foot position (world): ({x_init_world:.3f}, {y_init_world:.3f}, {z_init_world:.3f})")
         print(f"[drone] {leg_id}: Initial body position: {initial_body_pos}")
+        print(f"[drone] {leg_id}: Initial body orientation (RPY): ({math.degrees(initial_roll):.1f}°, {math.degrees(initial_pitch):.1f}°, {math.degrees(initial_yaw):.1f}°)")
         
         # Process each observation frame
         for i, (obs, body_pos) in enumerate(zip(observations, body_positions)):
             # Simplified: assume joint angles from observation (in real RoboPose, estimate from image)
             joint_angles = obs.get("joint_angles", [0.0, 0.0, 0.0])
+            
+            # Get current body orientation
+            if self.robopose.spot_node:
+                current_orientation = self.robopose.spot_node.getOrientation()
+                current_roll = math.atan2(current_orientation[7], current_orientation[8])
+                current_pitch = math.asin(-current_orientation[6])
+                current_yaw = math.atan2(current_orientation[3], current_orientation[0])
+            else:
+                current_roll = current_pitch = current_yaw = 0.0
             
             # Debug: Print joint angles for first observation
             if i == 0:
@@ -405,19 +472,42 @@ class DroneCircularController:
             y_local = y_offset + L1 * math.sin(theta1)
             z_local = -(L2 * math.sin(theta2) + L3 * math.sin(theta2 + theta3))
             
-            # Calculate absolute foot position in world coordinates
-            x_world = body_pos[0] + x_local
-            y_world = body_pos[1] + y_local
-            z_world = body_pos[2] + z_local
+            # Apply rotation compensation to account for body orientation changes (e.g., falling)
+            # Calculate orientation change from initial
+            delta_roll = current_roll - initial_roll
+            delta_pitch = current_pitch - initial_pitch
             
-            # Calculate displacement from initial world position
-            # This accounts for BOTH leg movement AND body movement
-            x_disp = x_world - x_init_world
-            y_disp = y_world - y_init_world
-            z_disp = z_world - z_init_world
+            # Simplified rotation compensation (assumes small angles for efficiency)
+            # For large angles, full rotation matrix would be more accurate
+            # But for diagnosis purposes, this approximation is sufficient
+            if abs(delta_roll) > 0.01 or abs(delta_pitch) > 0.01:
+                # Apply inverse rotation to get true leg-local position
+                # Rotate around Y-axis (pitch) then X-axis (roll)
+                cos_p, sin_p = math.cos(-delta_pitch), math.sin(-delta_pitch)
+                cos_r, sin_r = math.cos(-delta_roll), math.sin(-delta_roll)
+                
+                # Pitch rotation (around Y)
+                x_temp = x_local * cos_p + z_local * sin_p
+                z_temp = -x_local * sin_p + z_local * cos_p
+                
+                # Roll rotation (around X)
+                y_compensated = y_local * cos_r - z_temp * sin_r
+                z_compensated = y_local * sin_r + z_temp * cos_r
+                x_compensated = x_temp
+                
+                x_local = x_compensated
+                y_local = y_compensated
+                z_local = z_compensated
+            
+            # Calculate displacement in body-local frame (relative to initial body position)
+            # This removes the effect of body movement, focusing only on leg movement
+            # by comparing current local position to initial local position
+            x_disp = x_local - x_init_local
+            y_disp = y_local - y_init_local
+            z_disp = z_local - z_init_local
             
             end_position = [x_disp, y_disp, z_disp]
-            base_orientation = [0.0, 0.0, 0.0]  # Simplified
+            base_orientation = [math.degrees(current_roll), math.degrees(current_pitch), math.degrees(current_yaw)]
             
             # Send frame to pipeline
             self.pipeline.record_robo_pose_frame(

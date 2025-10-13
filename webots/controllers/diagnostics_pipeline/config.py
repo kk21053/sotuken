@@ -2,16 +2,16 @@
 
 from typing import Tuple
 
-# 仕様: 各脚のID（FL、FR、BL、BR） - 標準的にはRL、RRを使用
-LEG_IDS: Tuple[str, str, str, str] = ("FL", "FR", "RL", "RR")
+# 仕様: 各脚のID（FL、FR、RL、RR）
+LEG_IDS: Tuple[str, ...] = ("FL", "FR", "RL", "RR")
 
-# 仕様: 拘束原因のラベル（正常、故障、埋まる、挟まる、絡まる）
-CAUSE_LABELS: Tuple[str, str, str, str, str] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION")
+# 仕様: 拘束原因のラベル（正常、故障、埋まる、挟まる、絡まる、転倒）
+CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN")
 
-# 仕様ステップ1: 各脚に対して4回ずつ内部診断
-TRIAL_COUNT: int = 4
-TRIAL_PATTERN: Tuple[str, str, str, str] = ("+", "+", "-", "-")
-TRIAL_MOTOR_INDICES: Tuple[int, int, int, int] = (2, 2, 1, 0)  # knee, knee, hip, shoulder
+# 仕様ステップ1: 各脚に対して6回ずつ内部診断（各関節を両方向にテスト）
+TRIAL_COUNT: int = 6
+TRIAL_PATTERN: Tuple[str, ...] = ("+", "-", "+", "-", "+", "-")
+TRIAL_MOTOR_INDICES: Tuple[int, ...] = (2, 2, 1, 1, 0, 0)  # knee+, knee-, hip+, hip-, shoulder+, shoulder-
 TRIAL_DURATION_S: float = 0.4
 TRIAL_ANGLE_DEG: float = 4.0
 

@@ -10,8 +10,8 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-# ログディレクトリ
-LOG_DIR = Path(__file__).parent / "controllers" / "diagnostics_pipeline" / "logs"
+# ログディレクトリ（ドローンコントローラーのログを使用）
+LOG_DIR = Path(__file__).parent / "controllers" / "drone_circular_controller" / "logs"
 SESSION_LOG = LOG_DIR / "leg_diagnostics_sessions.jsonl"
 
 
@@ -52,7 +52,8 @@ def format_cause(cause):
         "BURIED": "埋まる",
         "TRAPPED": "挟まる",
         "TANGLED": "絡まる",
-        "MALFUNCTION": "故障"
+        "MALFUNCTION": "故障",
+        "FALLEN": "転倒"
     }
     return cause_map.get(cause, cause)
 
@@ -84,10 +85,17 @@ def display_result(result):
             continue
         
         leg_data = legs[leg_id]
-        movement = format_movement_status(leg_data.get('movement_status', 'N/A'))
+        movement = leg_data.get('movement_result', 'N/A')
         confidence = leg_data.get('p_can', 0.0)
-        cause = format_cause(leg_data.get('cause', 'N/A'))
-        expected_cause = format_cause(leg_data.get('expected_cause', 'N/A'))
+        cause = format_cause(leg_data.get('cause_final', 'N/A'))
+        expected_cause_raw = leg_data.get('expected_cause', 'N/A')
+        leg_fallen = leg_data.get('fallen', False)
+        
+        # 転倒が発生した脚で、期待値がNONEの場合は「正常/転倒」と表示
+        if leg_fallen and expected_cause_raw == 'NONE':
+            expected_cause = "正常/転倒"
+        else:
+            expected_cause = format_cause(expected_cause_raw)
         
         print(f"{leg_id:^6} | {movement:^12} | {confidence:^8.3f} | {cause:^10} | {expected_cause:^10}")
     
@@ -95,7 +103,7 @@ def display_result(result):
     print()
     
     # 転倒状態
-    is_fallen = result.get('is_fallen', False)
+    is_fallen = result.get('fallen', False)  # 'is_fallen'ではなく'fallen'が正しいキー
     fallen_prob = result.get('fallen_probability', 0.0)
     print(f"転倒状態: {format_fallen_status(is_fallen)} (確率: {fallen_prob:.3f})")
     print()
@@ -106,7 +114,17 @@ def display_result(result):
     for leg_id in ['FL', 'FR', 'RL', 'RR']:
         if leg_id in legs:
             leg_data = legs[leg_id]
-            if leg_data.get('cause') == leg_data.get('expected_cause'):
+            cause_final = leg_data.get('cause_final')
+            expected_cause = leg_data.get('expected_cause')
+            leg_fallen = leg_data.get('fallen', False)
+            
+            # 判定ロジック：
+            # 1. cause_final == expected_cause なら正解
+            # 2. 転倒が発生した場合（leg_fallen == True）、
+            #    expected_cause が NONE でも cause_final が FALLEN なら正解
+            if cause_final == expected_cause:
+                correct_count += 1
+            elif leg_fallen and expected_cause == 'NONE' and cause_final == 'FALLEN':
                 correct_count += 1
             total_count += 1
     

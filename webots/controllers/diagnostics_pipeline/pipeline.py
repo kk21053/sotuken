@@ -82,6 +82,12 @@ class DiagnosticsPipeline:
         self._states: Dict[str, str] = {leg: "IDLE" for leg in config.LEG_IDS}
         self._active_trials: Dict[str, TrialBuffer] = {}
         self._trial_counts: Dict[str, int] = {leg: 0 for leg in config.LEG_IDS}
+    
+    def set_expected_causes(self, expected_causes: Dict[str, str]) -> None:
+        """Set expected causes for each leg from scenario configuration."""
+        for leg_id, cause in expected_causes.items():
+            leg_state = self.session.ensure_leg(leg_id)
+            leg_state.expected_cause = cause
 
     def start_trial(
         self,
@@ -170,6 +176,10 @@ class DiagnosticsPipeline:
         # Override self_can_raw with Spot's calculation if provided
         if spot_can_raw is not None:
             trial.self_can_raw = spot_can_raw
+            # Also update the raw_scores list used for finalize_leg
+            raw_scores = self.self_diag._raw_scores.get(leg_id, [])
+            if raw_scores:
+                raw_scores[-1] = spot_can_raw  # Replace last entry with Spot's value
         
         self.self_diag.finalize_leg(leg)
 

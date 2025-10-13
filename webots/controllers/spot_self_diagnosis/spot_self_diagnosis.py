@@ -580,13 +580,10 @@ class SpotDiagnosticsController:
             print(f"\n[spot] === Diagnosing leg {leg_id} ({leg_index + 1}/{len(diag_config.LEG_IDS)}) ===")
             
             for trial_index in range(1, diag_config.TRIAL_COUNT + 1):
-                # Reverse trial pattern for RL leg to avoid ground collision
-                # RL leg starts at -3.4° (tilted inward), so negative direction works better first
-                if leg_id == "RL":
-                    reversed_pattern = ["-", "-", "+", "+"]
-                    direction = reversed_pattern[trial_index - 1]
-                else:
-                    direction = diag_config.TRIAL_PATTERN[trial_index - 1]
+                # Use standard trial pattern for all legs
+                # Previously had reversed pattern for RL leg to avoid ground collision,
+                # but this caused false MALFUNCTION detection due to poor movement
+                direction = diag_config.TRIAL_PATTERN[trial_index - 1]
                 
                 print(f"[spot] Leg {leg_id} - Trial {trial_index}/{diag_config.TRIAL_COUNT} (dir={direction})")
                 
