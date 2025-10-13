@@ -1,4 +1,4 @@
-"""Dataclasses used across the diagnostics pipeline."""
+"""Dataclasses used across the diagnostics pipeline (仕様準拠版)."""
 
 from __future__ import annotations
 
@@ -11,18 +11,16 @@ from . import config
 
 @dataclass
 class TrialResult:
-    """Store aggregated values for a single trial."""
+    """単一試行の結果を格納（仕様のステップ1-2）"""
 
     leg_id: str
     trial_index: int
     direction: str
     start_time: float
     end_time: float
-    self_can_raw: Optional[float] = None
-    drone_can_raw: Optional[float] = None
-    features_drone: Dict[str, float] = field(default_factory=dict)
-    ok: bool = True
-    timestamp: float = field(default_factory=time.time)
+    self_can_raw: Optional[float] = None      # 仕様ステップ3で使用
+    drone_can_raw: Optional[float] = None     # 仕様ステップ4で使用
+    ok: bool = True  # ドローン観測成功フラグ（ログ用）
 
     @property
     def duration(self) -> float:
@@ -31,47 +29,49 @@ class TrialResult:
 
 @dataclass
 class LegState:
-    """Keep the running state for each leg."""
+    """各脚の状態を保持（仕様の診断フローに対応）"""
 
     leg_id: str
-    self_can: float = 0.0
-    self_moves: bool = False
-    drone_can: float = 0.0
+    
+    # 仕様ステップ3: spot_can（シグモイド変換後の動作確率）
+    spot_can: float = 0.5
+    
+    # 仕様ステップ4: drone_can（シグモイド変換後の動作確率）と確率分布
+    drone_can: float = 0.5
     p_drone: Dict[str, float] = field(
         default_factory=lambda: {c: 1.0 / len(config.CAUSE_LABELS) for c in config.CAUSE_LABELS}
     )
+    
+    # 仕様ステップ7: LLMの判定結果
     p_llm: Dict[str, float] = field(
         default_factory=lambda: {c: 1.0 / len(config.CAUSE_LABELS) for c in config.CAUSE_LABELS}
     )
-    p_final: Dict[str, float] = field(
-        default_factory=lambda: {c: 1.0 / len(config.CAUSE_LABELS) for c in config.CAUSE_LABELS}
-    )
+    movement_result: str = "一部動く"  # "動く" | "動かない" | "一部動く"
     cause_final: str = "NONE"
-    conf_final: float = 0.0
-    moves_final: bool = False
+    p_can: float = 0.0  # 仕様ステップ7: 最終的な動作確率
+    
     trials: List[TrialResult] = field(default_factory=list)
 
     def snapshot(self) -> "LegStatus":
         return LegStatus(
             leg_id=self.leg_id,
-            self_can=self.self_can,
-            self_moves=self.self_moves,
+            spot_can=self.spot_can,
             drone_can=self.drone_can,
-            moves_final=self.moves_final,
-            p_drone=dict(self.p_drone),
-            p_llm=dict(self.p_llm),
-            p_final=dict(self.p_final),
+            p_drone=self.p_drone.copy(),
+            p_llm=self.p_llm.copy(),
+            movement_result=self.movement_result,
             cause_final=self.cause_final,
-            conf_final=self.conf_final,
+            p_can=self.p_can,
         )
 
 
 @dataclass
 class SessionState:
-    """Session level information shared across legs."""
+    """セッション全体の状態（仕様の診断フロー全体）"""
 
     session_id: str
-    fallen: bool = False
+    fallen: bool = False           # 仕様ステップ8: 転倒判定結果
+    fallen_probability: float = 0.0  # 転倒確率
     legs: Dict[str, LegState] = field(default_factory=dict)
 
     def ensure_leg(self, leg_id: str) -> LegState:
@@ -82,22 +82,23 @@ class SessionState:
 
 @dataclass
 class LegStatus:
+    """結果表示用の脚の状態スナップショット"""
     leg_id: str
-    self_can: float
-    self_moves: bool
+    spot_can: float
     drone_can: float
-    moves_final: bool
     p_drone: Dict[str, float]
     p_llm: Dict[str, float]
-    p_final: Dict[str, float]
+    movement_result: str  # "動く" | "動かない" | "一部動く"
     cause_final: str
-    conf_final: float
+    p_can: float
 
 
 @dataclass
 class SessionRecord:
+    """ログ記録用のセッション記録（仕様ステップ9）"""
     session_id: str
     fallen: bool
+    fallen_probability: float
     legs: Dict[str, LegStatus]
 
     def to_dict(self) -> Dict:
@@ -105,17 +106,16 @@ class SessionRecord:
             "timestamp": time.time(),
             "session_id": self.session_id,
             "fallen": self.fallen,
+            "fallen_probability": self.fallen_probability,
             "legs": {
                 leg_id: {
-                    "self_can": leg.self_can,
-                    "self_moves": leg.self_moves,
+                    "spot_can": leg.spot_can,
                     "drone_can": leg.drone_can,
-                    "moves_final": leg.moves_final,
                     "p_drone": leg.p_drone,
                     "p_llm": leg.p_llm,
-                    "p_final": leg.p_final,
+                    "movement_result": leg.movement_result,
                     "cause_final": leg.cause_final,
-                    "conf_final": leg.conf_final,
+                    "p_can": leg.p_can,
                 }
                 for leg_id, leg in self.legs.items()
             },

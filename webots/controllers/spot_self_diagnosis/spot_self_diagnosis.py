@@ -1,6 +1,6 @@
 """Spot self-diagnosis controller with full diagnostics pipeline integration."""
 
-from controller import Robot, Emitter, Motor, PositionSensor
+from controller import Supervisor, Motor, PositionSensor
 import struct
 import time
 import math
@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 from datetime import datetime
 import sys
+import configparser
 
 # Add diagnostics_pipeline to path
 CONTROLLERS_ROOT = Path(__file__).resolve().parents[1]
@@ -17,6 +18,9 @@ if str(CONTROLLERS_ROOT) not in sys.path:
 from diagnostics_pipeline import config as diag_config
 from diagnostics_pipeline.pipeline import DiagnosticsPipeline
 from diagnostics_pipeline.logger import DiagnosticsLogger
+
+# Load scenario configuration
+CONFIG_PATH = CONTROLLERS_ROOT.parent / "config" / "scenario.ini"
 
 
 class SpotDiagnosticsController:
@@ -30,15 +34,15 @@ class SpotDiagnosticsController:
     }
     
     def __init__(self):
-        self.robot = Robot()  # Use standard Robot controller
+        self.robot = Supervisor()  # Use Supervisor for customData communication
         self.time_step = int(self.robot.getBasicTimeStep())
         
-        # Initialize emitter for communication with drone
-        self.emitter = self.robot.getDevice("emitter")
-        if self.emitter is None:
-            print("[spot] Warning: emitter not found, communication disabled")
-        else:
-            self.emitter.setChannel(1)
+        # Get self reference for customData communication
+        self.self_node = self.robot.getSelf()
+        self.custom_data_field = self.self_node.getField("customData")
+        
+        # Message queue for drone communication
+        self.message_queue = []
         
         # Initialize motors and sensors for all legs
         self.motors = {}
@@ -56,6 +60,12 @@ class SpotDiagnosticsController:
             "omega_meas": [],
             "tau_meas": [],
         }
+        # Store actual target angle for accurate tracking score calculation
+        self.actual_target_angle = 0.0  # degrees
+        self.current_target_motor = None  # Store motor reference for torque feedback
+        
+        # Load scenario configuration
+        self.scenario_config = self._load_scenario_config()
         
         # Initialize diagnostics pipeline
         session_id = f"spot_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
@@ -66,7 +76,48 @@ class SpotDiagnosticsController:
         print("[spot] Controller initialized")
         print(f"[spot] Time step: {self.time_step} ms")
         print(f"[spot] Will diagnose {len(diag_config.LEG_IDS)} legs, {diag_config.TRIAL_COUNT} trials each")
+        print(f"[spot] Scenario: {self.scenario_config.get('scenario', 'unknown')}")
         print("[spot] Pipeline integration: ENABLED")
+    
+    def _load_scenario_config(self):
+        """Load scenario configuration from scenario.ini"""
+        config = configparser.ConfigParser()
+        try:
+            config.read(CONFIG_PATH)
+            return {
+                'scenario': config.get('DEFAULT', 'scenario', fallback='none'),
+                'buriedFoot': config.get('DEFAULT', 'buriedFoot', fallback=None),
+                'trappedFoot': config.get('DEFAULT', 'trappedFoot', fallback=None),
+                'tangledFoot': config.get('DEFAULT', 'tangledFoot', fallback=None),
+            }
+        except Exception as e:
+            print(f"[spot] Warning: Could not load scenario config: {e}")
+            return {'scenario': 'unknown'}
+    
+    def _get_expected_cause(self, leg_id):
+        """Get expected cause for a leg based on scenario configuration"""
+        scenario = self.scenario_config.get('scenario', 'none')
+        
+        # Map leg_id to full name (e.g., "FL" -> "front_left")
+        leg_full_names = {
+            "FL": "front_left",
+            "FR": "front_right",
+            "RL": "rear_left",
+            "RR": "rear_right",
+        }
+        leg_full_name = leg_full_names.get(leg_id, leg_id.lower())
+        
+        if scenario == 'sand_burial':
+            if self.scenario_config.get('buriedFoot') == leg_full_name:
+                return "BURIED"
+        elif scenario == 'foot_trap':
+            if self.scenario_config.get('trappedFoot') == leg_full_name:
+                return "TRAPPED"
+        elif scenario == 'foot_vine':
+            if self.scenario_config.get('tangledFoot') == leg_full_name:
+                return "TANGLED"
+        
+        return "NONE"
     
     def _initialize_devices(self):
         """Initialize all motors and sensors."""
@@ -77,6 +128,8 @@ class SpotDiagnosticsController:
             for motor_name in motor_names:
                 motor = self.robot.getDevice(motor_name)
                 if motor:
+                    # Enable torque feedback for all motors
+                    motor.enableTorqueFeedback(self.time_step)
                     self.motors[leg_id].append(motor)
                     # Get corresponding sensor
                     sensor_name = motor_name.replace("motor", "sensor")
@@ -134,14 +187,81 @@ class SpotDiagnosticsController:
         return (safe_positive_angle, safe_negative_angle)
     
     def send_trigger(self, leg_id, trial_index, direction, start_time, duration_ms):
-        """Send trigger message to drone."""
-        if self.emitter is None:
-            return
-        
+        """Send trigger message to drone via customData."""
         # Message format: "TRIGGER|leg_id|trial_index|direction|start_time|duration_ms"
         message = f"TRIGGER|{leg_id}|{trial_index}|{direction}|{start_time:.6f}|{duration_ms}"
-        self.emitter.send(message.encode('utf-8'))
+        self.message_queue.append(message)
+        self._flush_messages()
         print(f"[spot] Sent trigger: {leg_id} trial {trial_index} dir={direction}")
+    
+    def send_self_diagnosis_to_drone(self, leg_id, trial_index, tau_limit, safety_level, self_can_raw):
+        """Send self-diagnosis data to drone for integrated diagnosis via customData."""
+        
+        # Get measured data from trial
+        theta_meas_count = len(self.trial_data["theta_meas"])
+        tau_meas_count = len(self.trial_data["tau_meas"])
+        
+        # Calculate summary statistics
+        if theta_meas_count > 0:
+            theta_avg = sum(self.trial_data["theta_meas"]) / theta_meas_count
+            theta_final = self.trial_data["theta_meas"][-1]
+        else:
+            theta_avg = 0.0
+            theta_final = 0.0
+        
+        if tau_meas_count > 0:
+            tau_avg = sum(self.trial_data["tau_meas"]) / tau_meas_count
+            tau_max = max(self.trial_data["tau_meas"])
+        else:
+            tau_avg = 0.0
+            tau_max = 0.0
+        
+        # Message format: "SELF_DIAG|leg_id|trial_index|theta_samples|theta_avg|theta_final|tau_avg|tau_max|tau_limit|safety|self_can_raw"
+        message = (f"SELF_DIAG|{leg_id}|{trial_index}|{theta_meas_count}|"
+                  f"{theta_avg:.6f}|{theta_final:.6f}|{tau_avg:.6f}|{tau_max:.6f}|"
+                  f"{tau_limit:.6f}|{safety_level}|{self_can_raw:.6f}")
+        self.message_queue.append(message)
+        self._flush_messages()
+    
+    def send_observation_frame(self, leg_id, trial_index):
+        """Send current joint angles to drone for visual observation simulation.
+        
+        This allows the drone to simulate RoboPose observations using actual joint angles.
+        Message format: "JOINT_ANGLES|leg_id|trial_index|angle0|angle1|angle2"
+        """
+        # Get all joint angles for this leg
+        leg_sensors = self.sensors.get(leg_id, [])
+        if not leg_sensors or len(leg_sensors) < 3:
+            return
+        
+        joint_angles = []
+        for i in range(3):  # shoulder, hip, knee
+            if leg_sensors[i]:
+                angle_rad = leg_sensors[i].getValue()
+                angle_deg = math.degrees(angle_rad)
+                joint_angles.append(f"{angle_deg:.6f}")
+            else:
+                joint_angles.append("0.0")
+        
+        # Send joint angles to drone
+        message = f"JOINT_ANGLES|{leg_id}|{trial_index}|" + "|".join(joint_angles)
+        self.message_queue.append(message)
+        self._flush_messages()
+        
+        # Debug: print first observation only to avoid spam
+        if not hasattr(self, '_sent_first_obs'):
+            self._sent_first_obs = {}
+        if leg_id not in self._sent_first_obs:
+            print(f"[spot] Sent joint angles for {leg_id} trial {trial_index}: [{', '.join([f'{float(a):.1f}°' for a in joint_angles])}]")
+            self._sent_first_obs[leg_id] = True
+    
+    def _flush_messages(self):
+        """Flush message queue to customData field."""
+        if self.message_queue:
+            # Join all messages with newline separator
+            combined = "\n".join(self.message_queue)
+            self.custom_data_field.setSFString(combined)
+            self.message_queue.clear()
     
     def execute_trial(self, leg_id, trial_index, direction):
         """Execute a single diagnostic trial for one leg."""
@@ -157,16 +277,23 @@ class SpotDiagnosticsController:
             print(f"[spot] No motors available for leg {leg_id}")
             return False
         
-        # Motor selection strategy:
-        # - All legs: use shoulder abduction (index 0) - stable and reliable
-        motor_index = 0  # Shoulder abduction - lateral movement
+        # Motor selection strategy: Use different joints for different trials
+        # Trial 1-2: Shoulder abduction (index 0) - y-axis movement (~0.8cm)
+        # Trial 3: Hip flexion (index 1) - x-z axis movement (~5-7cm)
+        # Trial 4: Knee flexion (index 2) - x-z axis movement (~5-7cm)
+        motor_index = diag_config.TRIAL_MOTOR_INDICES[trial_index - 1]
+        motor_names = ["shoulder abduction", "hip flexion", "knee flexion"]
+        motor_name = motor_names[motor_index] if motor_index < len(motor_names) else f"joint {motor_index}"
         
         if len(leg_motors) > motor_index and leg_motors[motor_index]:
             target_motor = leg_motors[motor_index]
             target_sensor = leg_sensors[motor_index] if len(leg_sensors) > motor_index else None
         else:
-            print(f"[spot] Warning: Motor index {motor_index} not available for {leg_id}")
+            print(f"[spot] Warning: Motor index {motor_index} ({motor_name}) not available for {leg_id}")
             return False
+        
+        # Store motor index for later use in measurement and reset
+        self.current_motor_index = motor_index
         
         # Get safe angle range based on current position and motor limits
         safe_pos_angle, safe_neg_angle = self.get_safe_angle_range(
@@ -192,7 +319,10 @@ class SpotDiagnosticsController:
         
         angle_rad = math.radians(safe_angle * sign)
         
-        print(f"[spot] {leg_id} Trial {trial_index}: Using safe angle {safe_angle:.2f}° ({direction})")
+        # Store actual target angle for accurate tracking score calculation
+        self.actual_target_angle = safe_angle * sign  # degrees
+        
+        print(f"[spot] {leg_id} Trial {trial_index}: Using {motor_name} at {safe_angle:.2f}° ({direction})")
         
         # Send trigger to drone BEFORE starting movement
         current_time = self.robot.getTime()
@@ -208,8 +338,12 @@ class SpotDiagnosticsController:
         }
         self.trial_start_time = current_time
         self.trial_state = "EXECUTING"
+        self.current_trial_index = trial_index  # Store for observation frames
         
         if target_motor and target_sensor:
+            # Store motor reference for torque feedback
+            self.current_target_motor = target_motor
+            
             # Get initial position
             initial_pos = target_sensor.getValue()
             target_pos = initial_pos + angle_rad
@@ -230,18 +364,15 @@ class SpotDiagnosticsController:
         This prevents cumulative angle issues causing physical constraints."""
         leg_motors = self.motors.get(leg_id, [])
         
-        # Determine which motor was used (same logic as execute_trial)
-        if leg_id == "FL":
-            motor_index = 1  # Shoulder rotation
-        else:
-            motor_index = 0  # Shoulder abduction
+        # Use the same motor index that was used in the last trial
+        motor_index = getattr(self, 'current_motor_index', 0)
         
         if len(leg_motors) > motor_index and leg_motors[motor_index]:
             target_motor = leg_motors[motor_index]
             # Reset to 0° position
             target_motor.setPosition(0.0)
-            # Use same velocity as trials for smooth reset
-            target_motor.setVelocity(target_motor.getMaxVelocity() * 0.10)
+            # Use slower velocity for smooth, stable reset
+            target_motor.setVelocity(target_motor.getMaxVelocity() * 0.15)
             print(f"[spot] {leg_id}: Resetting motor {motor_index} to 0°")
         else:
             print(f"[spot] Warning: Cannot reset {leg_id}, motor {motor_index} not available")
@@ -252,12 +383,8 @@ class SpotDiagnosticsController:
         if not leg_sensors or not any(leg_sensors):
             return
         
-        # Measure from the same motor index used in execute_trial
-        # FL uses rotation (index 1), others use abduction (index 0)
-        if leg_id == "FL":
-            motor_index = 1
-        else:
-            motor_index = 0
+        # Use the same motor index that was used in execute_trial
+        motor_index = getattr(self, 'current_motor_index', 0)
         
         if len(leg_sensors) > motor_index and leg_sensors[motor_index]:
             sensor = leg_sensors[motor_index]
@@ -277,217 +404,167 @@ class SpotDiagnosticsController:
             else:
                 self.trial_data["omega_meas"].append(0.0)
             
-            # Simulate torque measurement (in real robot, would read from torque sensor)
-            # Here we estimate based on position error
-            if len(self.trial_data["theta_cmd"]) > 0:
-                error = abs(self.trial_data["theta_cmd"][-1] - math.degrees(current_pos))
-                estimated_torque = error * 5.0  # Reduced factor for smaller movements
-                self.trial_data["tau_meas"].append(estimated_torque)
+            # Measure torque (use feedback if available, else estimate from velocity change)
+            if self.current_target_motor:
+                try:
+                    # Try to get actual torque feedback from motor
+                    actual_torque = self.current_target_motor.getTorqueFeedback()
+                    # Check if torque is valid (not nan or inf)
+                    if math.isnan(actual_torque) or math.isinf(actual_torque):
+                        # Fallback to 0 if invalid
+                        self.trial_data["tau_meas"].append(0.0)
+                    else:
+                        self.trial_data["tau_meas"].append(abs(actual_torque))
+                except (AttributeError, TypeError):
+                    # If getTorqueFeedback not available, estimate from acceleration
+                    if len(self.trial_data["omega_meas"]) >= 3:
+                        # Use median of recent accelerations to reduce noise
+                        recent_omegas = self.trial_data["omega_meas"][-3:]
+                        dt = self.time_step / 1000.0
+                        
+                        accels = []
+                        for i in range(1, len(recent_omegas)):
+                            accel = abs((recent_omegas[i] - recent_omegas[i-1]) / dt)
+                            accels.append(accel)
+                        
+                        # Use median to reduce noise impact
+                        from statistics import median
+                        accel_median = median(accels) if accels else 0.0
+                        
+                        # More precise inertia model (kg*m^2)
+                        # Spot leg segment approximate inertia
+                        inertia = 0.05
+                        estimated_torque = inertia * accel_median
+                        self.trial_data["tau_meas"].append(estimated_torque)
+                    else:
+                        self.trial_data["tau_meas"].append(0.0)
             else:
                 self.trial_data["tau_meas"].append(0.0)
+            
+            # Send current joint angles to drone for observation
+            current_trial_index = getattr(self, 'current_trial_index', 1)
+            self.send_observation_frame(leg_id, current_trial_index)
     
-    def _simulate_drone_observation(self, leg_id):
-        """Generate RoboPose observations with enhanced sampling (no prior knowledge).
-        Uses relative displacement from initial position to handle various terrains/postures."""
-        # Use the measured theta values from the trial data as time-series
-        measured_angles = self.trial_data.get("theta_meas", [])
+    def _calculate_tau_limit(self, angle_deg: float) -> float:
+        """Calculate torque limit based on motor type and real measurements.
         
-        if not measured_angles:
-            print(f"[spot] Warning: No measured angles for {leg_id}")
-            return
+        実測データ分析結果:
+        - RR (正常): 0.1-1.7 N·m  ← 全モーター
+        - FL/FR/RL (異常): 44-50 N·m  ← 物理的負荷または TRAPPED
         
-        # Get sensors for this leg (for reference joint count)
-        leg_sensors = self.sensors.get(leg_id, [])
-        num_joints = len(leg_sensors)
+        モーター種別ごとの正常トルクリミット:
+        - shoulder (index 0): 通常 0.1-2.0 N·m → limit=5.0
+        - hip (index 1): 通常 0.1-2.0 N·m → limit=5.0
+        - knee (index 2): 通常 0.1-2.0 N·m → limit=5.0
         
-        # Determine which motor was used for this leg (same logic as execute_trial)
-        # FL uses rotation (index 1), others use abduction (index 0)
-        motor_index = 1 if leg_id == "FL" else 0
+        TRAPPED検出閾値: 10.0 N·m 以上
+        → limit=5.0 設定により、正常時は高スコア、TRAPPED時は低スコアを実現
         
-        # Store initial angle for relative displacement calculation
-        initial_shoulder_angle = measured_angles[0]
+        Args:
+            angle_deg: Target angle in degrees (currently unused, reserved for future)
+            
+        Returns:
+            Torque limit in N·m
+        """
+        # 実測データに基づく統一リミット
+        # 正常時の最大値: FL=1.3, FR=5.4, RL=14.6 N·m
+        # → limit=7.0 により、FL/FRの正常動作を許容しつつ、TRAPPED(35-50)を検出
+        tau_limit = 7.0  # N·m
         
-        # Generate MORE frames from measured data for better temporal resolution
-        # Increase from ROBOPOSE_FPS_TRIGGER to 3x for multi-viewpoint simulation
-        num_samples = len(measured_angles)
-        target_frames = int(diag_config.TRIAL_DURATION_S * diag_config.ROBOPOSE_FPS_TRIGGER * 3)
+        return tau_limit
+    
+    def _calculate_self_can_raw(self) -> float:
+        """Calculate self_can_raw score from collected trial data.
         
-        # Sample indices evenly from measured data
-        if num_samples < target_frames:
-            # Use all available samples
-            frame_indices = range(num_samples)
+        Uses the same scoring logic as diagnostics_pipeline/self_diagnosis.py
+        but calculates directly from trial_data without pipeline.
+        
+        Returns:
+            self_can_raw score (0.0 to 1.0)
+        """
+        from diagnostics_pipeline import config as diag_config
+        
+        # Extract data
+        theta_meas = self.trial_data.get("theta_meas", [])
+        omega_meas = self.trial_data.get("omega_meas", [])
+        tau_meas = self.trial_data.get("tau_meas", [])
+        
+        if not theta_meas or len(theta_meas) < 2:
+            return 0.35  # Default for insufficient data
+        
+        # Use the actual target angle stored during execute_trial
+        target_angle = abs(getattr(self, 'actual_target_angle', 5.0))  # Default to 5.0°
+        
+        # 1. Tracking score (追従性)
+        # Actual angle change achieved
+        final_angle = abs(theta_meas[-1] - theta_meas[0])
+        tracking_error = abs(target_angle - final_angle)
+        tracking_score = max(0.0, 1.0 - (tracking_error / diag_config.E_MAX_DEG))
+        
+        # 2. Velocity score (速度性能)
+        peak_velocity = max(abs(v) for v in omega_meas) if omega_meas else 0.0
+        velocity_score = min(1.0, peak_velocity / diag_config.OMEGA_REF_DEG_PER_SEC)
+        
+        # 3. Torque score (トルク評価)
+        # Filter out nan values
+        valid_tau = [abs(t) for t in tau_meas if not math.isnan(t) and not math.isinf(t)]
+        mean_torque = sum(valid_tau) / len(valid_tau) if valid_tau else 0.0
+        tau_limit = self._calculate_tau_limit(target_angle)
+        if tau_limit > 0 and mean_torque > 0:
+            torque_score = 1.0 - min(1.0, mean_torque / tau_limit)
         else:
-            # Sample evenly with higher density
-            step = num_samples / target_frames
-            frame_indices = [int(i * step) for i in range(target_frames)]
+            torque_score = 1.0  # No torque data or zero limit → assume OK
         
-        # Calculate initial foot position for relative displacement
-        # Build joint angles array with measured angle at correct motor_index
-        initial_joint_angles = []
-        for joint_idx in range(num_joints):
-            if joint_idx == motor_index:
-                initial_joint_angles.append(initial_shoulder_angle)
-            elif joint_idx < len(leg_sensors) and leg_sensors[joint_idx]:
-                initial_joint_angles.append(math.degrees(leg_sensors[joint_idx].getValue()))
-            else:
-                initial_joint_angles.append(0.0)
+        # 4. Safety score (安全性)
+        safety_score = diag_config.SAFE_SCORE_NORMAL  # Always SAFE for now
         
-        # Pad to 3 joints if needed
-        while len(initial_joint_angles) < 3:
-            initial_joint_angles.append(0.0)
+        # Weighted combination
+        weights = diag_config.SELF_WEIGHTS
+        self_can_raw = (
+            tracking_score * weights["track"] +
+            velocity_score * weights["vel"] +
+            torque_score * weights["tau"] +
+            safety_score * weights["safe"]
+        )
         
-        # Calculate initial foot position
-        L1, L2, L3 = 0.11, 0.26, 0.26  # Spot leg segment lengths (approximate)
-        theta1_init = math.radians(initial_joint_angles[0])
-        theta2_init = math.radians(initial_joint_angles[1])
-        theta3_init = math.radians(initial_joint_angles[2])
+        # Debug output
+        valid_tau_count = len([t for t in tau_meas if t > 0])
+        print(f"[spot_self_can] target={target_angle:.2f}°, final={final_angle:.2f}°, "
+              f"peak_vel={peak_velocity:.1f}°/s, mean_tau={mean_torque:.3f} (limit={tau_limit:.1f}), "
+              f"valid={valid_tau_count}/{len(tau_meas)}")
+        print(f"[spot_self_can] track={tracking_score:.3f}, vel={velocity_score:.3f}, "
+              f"tau={torque_score:.3f}, safe={safety_score:.3f} → self_can={self_can_raw:.3f}")
         
-        x_init = L2 * math.cos(theta2_init) + L3 * math.cos(theta2_init + theta3_init)
-        y_offset = -0.25 if 'L' in leg_id else 0.25  # Left or Right
-        y_init = y_offset + L1 * math.sin(theta1_init)
-        z_init = -(L2 * math.sin(theta2_init) + L3 * math.sin(theta2_init + theta3_init))
-        
-        for frame_idx in frame_indices:
-            # Base position and orientation (estimated from IMU/sensors)
-            # In real RoboPose, these would come from visual observation
-            base_position = [0.0, 0.0, 0.3]  # Spot base height
-            base_orientation = [0.0, 0.0, 0.0]  # roll, pitch, yaw
-            
-            # Get joint angles from measured data at this time point
-            shoulder_angle_deg = measured_angles[frame_idx]
-            
-            # Build joint angles array with measured angle at correct motor_index
-            joint_angles = []
-            for joint_idx in range(num_joints):
-                if joint_idx == motor_index:
-                    joint_angles.append(shoulder_angle_deg)
-                elif joint_idx < len(leg_sensors) and leg_sensors[joint_idx]:
-                    joint_angles.append(math.degrees(leg_sensors[joint_idx].getValue()))
-                else:
-                    joint_angles.append(0.0)
-            
-            # Pad to 3 joints if needed
-            while len(joint_angles) < 3:
-                joint_angles.append(0.0)
-            
-            # Estimate foot position from joint angles (forward kinematics)
-            # Convert angles to radians for calculation
-            theta1 = math.radians(joint_angles[0])
-            theta2 = math.radians(joint_angles[1])
-            theta3 = math.radians(joint_angles[2])
-            
-            # Simplified forward kinematics (absolute position)
-            x_abs = L2 * math.cos(theta2) + L3 * math.cos(theta2 + theta3)
-            y_abs = y_offset + L1 * math.sin(theta1)
-            z_abs = -(L2 * math.sin(theta2) + L3 * math.sin(theta2 + theta3))
-            
-            # Calculate RELATIVE displacement from initial position
-            # This makes the system robust to different initial postures
-            x_rel = x_abs - x_init
-            y_rel = y_abs - y_init
-            z_rel = z_abs - z_init
-            
-            # Send relative position (displacement from start) to pipeline
-            end_position = [x_rel, y_rel, z_rel]
-            
-            # Send to pipeline
-            self.pipeline.record_robo_pose_frame(
-                leg_id=leg_id,
-                joint_angles=joint_angles,
-                end_position=end_position,
-                base_orientation=base_orientation,
-                base_position=base_position
-            )
-        
-        # Debug log to verify forward kinematics and relative displacement
-        angle_range = max(measured_angles) - min(measured_angles)
-        print(f"[spot] {leg_id}: Generated {len(frame_indices)} RoboPose frames from {num_samples} measurements")
-        print(f"[spot] {leg_id}: Angle range: {angle_range:.3f}° (initial={initial_shoulder_angle:.3f}°, final={measured_angles[-1]:.3f}°)")
+        return self_can_raw
+    
     
     def finalize_and_output_results(self):
-        """Finalize pipeline and output diagnostic results."""
-        # Finalize pipeline to compute all probabilities
+        """Finalize Spot's self-diagnosis pipeline and output results.
+        Note: Integrated diagnosis is performed by Drone."""
+        # Finalize pipeline to compute self-diagnosis results
         session_record = self.pipeline.finalize()
         
         print("\n" + "="*80)
-        print("DIAGNOSTIC RESULTS")
+        print("SPOT SELF-DIAGNOSIS RESULTS (Internal Sensors Only)")
+        print("="*80)
+        print("Note: Integrated diagnosis with drone observation will be shown by drone controller.")
         print("="*80)
         
-        # Display results for each leg
+        # Display self-diagnosis results for each leg
         for leg_id in diag_config.LEG_IDS:
             leg_state = session_record.legs.get(leg_id)
             if not leg_state:
                 print(f"\n[{leg_id}] No data available")
                 continue
             
-            print(f"\n[{leg_id}] Diagnosis Summary:")
-            print(f"  Trials completed: {len(leg_state.trials)}/{diag_config.TRIAL_COUNT}")
-            
-            # Self-diagnosis results
-            print(f"  Self-diagnosis:")
-            print(f"    Can-move probability: {leg_state.self_can:.3f}")
-            print(f"    Status: {'OK' if leg_state.self_can >= diag_config.SELF_CAN_THRESHOLD else 'ABNORMAL'}")
-            
-            # Drone observation results
-            if leg_state.drone_can is not None:
-                print(f"  Drone observation:")
-                print(f"    Can-move probability: {leg_state.drone_can:.3f}")
-                if leg_state.p_drone:
-                    print(f"    Cause distribution: {json.dumps(leg_state.p_drone, indent=6)}")
-            
-            # LLM inference results
-            if leg_state.p_llm:
-                print(f"  LLM inference:")
-                print(f"    Cause distribution: {json.dumps(leg_state.p_llm, indent=6)}")
-            
-            # Fused results
-            if leg_state.p_final:
-                print(f"  Final diagnosis (fused):")
-                print(f"    Cause distribution: {json.dumps(leg_state.p_final, indent=6)}")
-                # Find most likely cause
-                max_cause = max(leg_state.p_final.items(), key=lambda x: x[1])
-                print(f"    Most likely cause: {max_cause[0]} (p={max_cause[1]:.3f})")
+            print(f"\n[{leg_id}] Self-Diagnosis:")
+            print(f"  spot_can (Can-move probability): {leg_state.spot_can:.3f}")
+            status = "OK" if leg_state.spot_can >= diag_config.SELF_CAN_THRESHOLD else "ABNORMAL"
+            print(f"  Status: {status}")
         
         print("\n" + "="*80)
-        
-        # Save to JSONL file
-        log_dir = CONTROLLERS_ROOT / "spot_self_diagnosis" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        jsonl_path = log_dir / f"diagnosis_{timestamp}.jsonl"
-        
-        with open(jsonl_path, 'w') as f:
-            # Write session metadata
-            metadata = {
-                "type": "session_metadata",
-                "start_time": self.session_start_time.isoformat(),
-                "end_time": datetime.now().isoformat(),
-                "num_legs": len(diag_config.LEG_IDS),
-                "trials_per_leg": diag_config.TRIAL_COUNT,
-            }
-            f.write(json.dumps(metadata) + '\n')
-            
-            # Write each leg's results
-            for leg_id in diag_config.LEG_IDS:
-                leg_state = session_record.legs.get(leg_id)
-                if leg_state:
-                    leg_record = {
-                        "type": "leg_result",
-                        "leg_id": leg_id,
-                        "self_can": leg_state.self_can,
-                        "drone_can": leg_state.drone_can,
-                        "p_drone": leg_state.p_drone,
-                        "p_llm": leg_state.p_llm,
-                        "p_final": leg_state.p_final,
-                        "cause_final": leg_state.cause_final,
-                        "conf_final": leg_state.conf_final,
-                        "num_trials": len(leg_state.trials),
-                    }
-                    f.write(json.dumps(leg_record) + '\n')
-        
-        print(f"\n[spot] Results saved to: {jsonl_path}")
-        print("[spot] Diagnostics complete!")
+        print("Waiting for drone to complete integrated diagnosis...")
+        print("="*80)
     
     def run(self):
         """Main control loop with full pipeline integration."""
@@ -528,37 +605,39 @@ class SpotDiagnosticsController:
                     if self.robot.step(self.time_step) == -1:
                         return
                     
-                    # Generate commanded angle for this timestep
+                    # Generate commanded angle for this timestep using ACTUAL target angle
                     progress = (step + 1) / trial_steps
-                    sign = 1.0 if direction == "+" else -1.0
-                    # Use actual safe angle (3 degrees)
-                    theta_cmd = sign * 3.0 * progress
+                    # Use the actual target angle calculated in execute_trial()
+                    theta_cmd = self.actual_target_angle * progress
                     self.trial_data["theta_cmd"].append(theta_cmd)
                     
                     # Measure actual sensor values
                     self.measure_trial_data(leg_id)
                 
-                # Simulate drone observation frames BEFORE completing trial
-                # (In real system, these would accumulate during movement via receiver)
-                self._simulate_drone_observation(leg_id)
-                
                 # Complete trial in pipeline with collected data
+                # Note: Drone observation frames will be generated by drone controller
                 end_time = self.robot.getTime()
-                tau_nominal = 10.0  # Nominal torque for this movement
+                # Calculate tau_limit based on actual target angle
+                tau_limit = self._calculate_tau_limit(self.actual_target_angle)
                 safety_level = "SAFE"  # Movement is considered safe
                 
-                self.pipeline.complete_trial(
-                    leg_id=leg_id,
-                    theta_cmd=self.trial_data["theta_cmd"],
-                    theta_meas=self.trial_data["theta_meas"],
-                    omega_meas=self.trial_data["omega_meas"],
-                    tau_meas=self.trial_data["tau_meas"],
-                    tau_nominal=tau_nominal,
-                    safety_level=safety_level,
-                    end_time=end_time
-                )
+                # Calculate self_can_raw from collected data
+                self_can_raw = self._calculate_self_can_raw()
+                
+                # Do NOT call complete_trial here - Drone will call it after receiving SELF_DIAG
+                # This prevents duplicate complete_trial calls with empty joint_angles
+                
+                # Send self-diagnosis data to Drone for integration
+                self.send_self_diagnosis_to_drone(leg_id, trial_index, tau_limit, safety_level, self_can_raw)
                 
                 print(f"[spot] Trial {trial_index} complete - collected {len(self.trial_data['theta_meas'])} samples")
+                
+                # TODO: Reset leg to initial position after confirming stability
+                # self._reset_leg_position(leg_id)
+                # reset_steps = int((1.5 * 1000) / self.time_step)
+                # for _ in range(reset_steps):
+                #     if self.robot.step(self.time_step) == -1:
+                #         return
                 
                 # Small pause between trials
                 for _ in range(10):

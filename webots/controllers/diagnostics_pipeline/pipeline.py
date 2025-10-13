@@ -7,7 +7,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import config
 from .drone_observer import DroneObservationAggregator
-from .fusion import fuse_probabilities, select_cause
+from .fusion import select_cause
 from .llm_client import LLMAnalyzer
 from .logger import DiagnosticsLogger
 from .models import LegState, SessionState, TrialResult
@@ -143,6 +143,7 @@ class DiagnosticsPipeline:
         tau_nominal: float,
         safety_level: str,
         end_time: Optional[float] = None,
+        spot_can_raw: Optional[float] = None,
     ) -> Optional[TrialResult]:
         buffer = self._active_trials.pop(leg_id, None)
         if buffer is None:
@@ -165,6 +166,11 @@ class DiagnosticsPipeline:
             tau_nominal,
             safety_level,
         )
+        
+        # Override self_can_raw with Spot's calculation if provided
+        if spot_can_raw is not None:
+            trial.self_can_raw = spot_can_raw
+        
         self.self_diag.finalize_leg(leg)
 
         self.drone.process_trial(
@@ -177,17 +183,17 @@ class DiagnosticsPipeline:
         )
         self.session.fallen = self.session.fallen or self.drone.fallen
 
-        p_llm = self.llm.infer(leg)
-        leg.p_final = fuse_probabilities(leg.p_drone, p_llm)
-        leg.cause_final = select_cause(leg.p_final)
-        leg.conf_final = leg.p_final.get(leg.cause_final, 0.0)
-
-        if not leg.self_moves and leg.drone_can >= 0.85:
-            leg.moves_final = True
-        elif leg.self_moves and leg.drone_can <= 0.30:
-            leg.moves_final = False
-        else:
-            leg.moves_final = leg.self_moves
+        # 仕様ステップ7: ルールベースLLMによる判定
+        # LLMがspot_can, drone_can, 確率分布を受け取り、4つのルールで判定
+        self.llm.infer(leg)
+        
+        # ログ出力
+        print(f"[Fusion] {leg.leg_id}:")
+        print(f"  spot_can: {leg.spot_can:.3f}")
+        print(f"  drone_can: {leg.drone_can:.3f}")
+        print(f"  判定: {leg.movement_result}")
+        print(f"  拘束原因: {leg.cause_final}")
+        print(f"  最終p_can: {leg.p_can:.3f}")
 
         self._trial_counts[leg_id] = self._trial_counts.get(leg_id, 0) + 1
         self.logger.log_trial(self.session.session_id, leg, trial, self.session.fallen)
@@ -195,7 +201,11 @@ class DiagnosticsPipeline:
         return trial
 
     def finalize(self) -> SessionState:
-        self.session.fallen = self.session.fallen or self.drone.fallen
+        # 仕様ステップ8: 転倒判定はドローンが既に実施済み
+        self.session.fallen = self.drone.fallen
+        self.session.fallen_probability = self.drone.fallen_probability
+        
+        # 仕様ステップ9: 結果をログに記録
         self.logger.log_session(self.session)
         return self.session
 

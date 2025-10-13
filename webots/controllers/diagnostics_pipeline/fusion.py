@@ -1,25 +1,20 @@
-"""Probability fusion utilities."""
+"""Simple utility for selecting the most likely cause from distribution."""
 
 from __future__ import annotations
 
 from typing import Dict
 
-from . import config
-from .utils import normalize_distribution
-
-
-def fuse_probabilities(p_drone: Dict[str, float], p_llm: Dict[str, float]) -> Dict[str, float]:
-    fused = {}
-    weights = config.FUSION_WEIGHTS
-    for label in config.CAUSE_LABELS:
-        fused[label] = (
-            weights["drone"] * float(p_drone.get(label, 0.0))
-            + weights["llm"] * float(p_llm.get(label, 0.0))
-        )
-    return normalize_distribution(fused)
-
 
 def select_cause(distribution: Dict[str, float]) -> str:
+    """
+    確率分布から最も確率の高い原因を選択する（仕様のステップ7で使用）
+    
+    Args:
+        distribution: 各原因の確率分布
+    
+    Returns:
+        最も確率の高い原因のラベル
+    """
     best_label = "NONE"
     best_value = -1.0
     for label, value in distribution.items():

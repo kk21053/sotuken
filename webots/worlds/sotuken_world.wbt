@@ -11,16 +11,17 @@ DEF WORLD_INFO WorldInfo {
     DEF SAND_CONTACT ContactProperties {
       material1 "sand"
       coulombFriction [
-        1.5
+        50
       ]
       bounce 0
     }
     DEF TRAP_CONTACT ContactProperties {
       material1 "trap"
       coulombFriction [
-        2.5
+        10000
       ]
       bounce 0
+      softCFM 0.0001
     }
     DEF VINE_CONTACT ContactProperties {
       material1 "vine"
@@ -33,8 +34,8 @@ DEF WORLD_INFO WorldInfo {
 }
 Viewpoint {
   fieldOfView 1
-  orientation 0.24566552370389122 -0.3968751684645546 -0.884385974063092 5.307255205901462
-  position -6.550192097056085 -9.84986965293443 6.843489318076507
+  orientation 0.2511796961297231 0.027211739493891492 -0.9675578956764793 3.127715040806748
+  position 5.399532407726267 0.43922243144098794 2.8759955854462222
   near 0.1
   far 100
 }
@@ -51,18 +52,17 @@ RectangleArena {
   floorSize 12 12
 }
 DEF SAND_PATCH SandPatch {
-  translation 0.36 0.18 -0.06
-  radius 0.3
-  height 0.18
+  radius 0.4
+  height 0.25
   color 0.9 0.7 0.3
 }
 DEF FOOT_TRAP Solid {
-  translation 0 0 -10
+  translation 0.48 0.17 0.0
   children [
     Group {
       children [
         Pose {
-          translation 0 0.08 0.09
+          translation 0 0.02 0.09
           children [
             Shape {
               appearance PBRAppearance {
@@ -71,13 +71,13 @@ DEF FOOT_TRAP Solid {
                 metalness 0.1
               }
               geometry Box {
-                size 0.2 0.02 0.18
+                size 0.2 0.015 0.18
               }
             }
           ]
         }
         Pose {
-          translation 0 -0.08 0.09
+          translation 0 -0.02 0.09
           children [
             Shape {
               appearance PBRAppearance {
@@ -86,7 +86,37 @@ DEF FOOT_TRAP Solid {
                 metalness 0.1
               }
               geometry Box {
-                size 0.2 0.02 0.18
+                size 0.2 0.015 0.18
+              }
+            }
+          ]
+        }
+        Pose {
+          translation 0.1 0 0.09
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.6 0.6 0.6
+                roughness 0.3
+                metalness 0.1
+              }
+              geometry Box {
+                size 0.02 0.015 0.18
+              }
+            }
+          ]
+        }
+        Pose {
+          translation -0.1 0 0.09
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.6 0.6 0.6
+                roughness 0.3
+                metalness 0.1
+              }
+              geometry Box {
+                size 0.02 0.015 0.18
               }
             }
           ]
@@ -101,7 +131,22 @@ DEF FOOT_TRAP Solid {
                 metalness 0.05
               }
               geometry Box {
-                size 0.2 0.16 0.06
+                size 0.2 0.015 0.06
+              }
+            }
+          ]
+        }
+        Pose {
+          translation 0 0 0.15
+          children [
+            Shape {
+              appearance PBRAppearance {
+                baseColor 0.4 0.4 0.4
+                roughness 0.6
+                metalness 0.05
+              }
+              geometry Box {
+                size 0.2 0.015 0.06
               }
             }
           ]
@@ -113,18 +158,34 @@ DEF FOOT_TRAP Solid {
   boundingObject Group {
     children [
       Pose {
-        translation 0 0.08 0.09
+        translation 0 0.02 0.09
         children [
           Box {
-            size 0.2 0.02 0.18
+            size 0.2 0.015 0.18
           }
         ]
       }
       Pose {
-        translation 0 -0.08 0.09
+        translation 0 -0.02 0.09
         children [
           Box {
-            size 0.2 0.02 0.18
+            size 0.2 0.015 0.18
+          }
+        ]
+      }
+      Pose {
+        translation 0.1 0 0.09
+        children [
+          Box {
+            size 0.02 0.015 0.18
+          }
+        ]
+      }
+      Pose {
+        translation -0.1 0 0.09
+        children [
+          Box {
+            size 0.02 0.015 0.18
           }
         ]
       }
@@ -132,7 +193,15 @@ DEF FOOT_TRAP Solid {
         translation 0 0 0.03
         children [
           Box {
-            size 0.2 0.16 0.06
+            size 0.2 0.015 0.06
+          }
+        ]
+      }
+      Pose {
+        translation 0 0 0.15
+        children [
+          Box {
+            size 0.2 0.015 0.06
           }
         ]
       }
@@ -200,46 +269,23 @@ DEF ENVIRONMENT_MANAGER Robot {
   supervisor TRUE
 }
 DEF SPOT Spot {
-  hidden position_0_0 -4.2126525464124005e-05
-  hidden position_0_1 3.973701930464294e-06
-  hidden position_0_2 -4.072648176656202e-05
-  hidden position_0_3 -1.3719156797264986e-06
-  hidden rotation_18 0 0 -1 4.2126528832467085e-05
-  hidden position_18_0 0.4127959686822956
-  hidden rotation_19 0.9999999999999999 0 0 0.4127959686822956
-  hidden position_19_1 2.0899305401403583e-05
-  hidden rotation_21 1 0 0 2.089931285513341e-05
-  hidden rotation_22 0 0 1 3.973667820217742e-06
-  hidden position_22_0 4.7921479726966255e-06
-  hidden rotation_23 1 0 0 4.792154131471298e-06
-  hidden position_23_1 2.3121915173054148e-05
-  hidden rotation_25 1 0 0 2.3121916281590726e-05
-  hidden rotation_26 0 0 -1 4.07264846690051e-05
-  hidden position_26_0 -0.016381709400033806
-  hidden rotation_27 -1 0 0 0.016381709400023838
-  hidden position_27_1 4.846109912645901e-06
-  hidden rotation_29 1 0 0 4.846154534651387e-06
-  hidden rotation_30 0 0 -0.9999999999999999 1.3718783004861033e-06
-  hidden position_30_0 1.1240517727834647e-06
-  hidden rotation_31 0.9999999999999999 0 0 1.1242232390558875e-06
-  hidden position_31_1 -1.4945652893061379e-07
-  hidden rotation_33 -0.9999999999999999 0 0 1.490116119384766e-07
-  translation 0.021526030266014518 0.020177670485378503 0.60948877920558
-  rotation -0.5935985234660064 0.31181687835219996 -0.7418969115137672 0.12855583891203395
+  translation 0 0 0.65
+  rotation 0 0 1 0
   controller "spot_self_diagnosis"
+  supervisor TRUE
 }
 DEF DRONE Mavic2Pro {
-  hidden position_0_0 1.866892565588414e-08
-  hidden position_5_0 -2.2267178014777347e-09
-  hidden linearVelocity_5 0.005700395196643018 0.2222567389995126 -1.4059852598954936
-  hidden angularVelocity_5 -3.254769448283116 0.12791676812683447 0.008157382392101478
-  hidden position_6_0 -1.8372183426091525e-10
-  hidden linearVelocity_6 0.0038304825227074377 0.17349913181001164 -1.387508035465858
-  hidden angularVelocity_6 -3.2547694526174076 0.12791669117263585 0.008157382567976204
-  hidden linearVelocity_7 0.0005062586447461996 0.08939558563881783 -1.3950302604066036
-  hidden angularVelocity_7 -3.2547694290313607 0.12791668929260755 0.008157382565768468
-  translation 0.02159081935888814 -1.9778872832858043 3.601872863078061
-  rotation -0.02499620558743948 0.02704135168094422 0.9993217474895151 1.5716053244719121
+  hidden position_0_0 1.4505818024493393e-08
+  hidden position_5_0 -1.9376215916962125e-09
+  hidden linearVelocity_5 0.0035616477081724966 0.15818071824375513 -1.0762386475009225
+  hidden angularVelocity_5 -2.7892427106783635 0.09731903135565499 0.006197898496908803
+  hidden position_6_0 -1.9913555590274255e-10
+  hidden linearVelocity_6 0.002358093997784918 0.12282497842903836 -1.0627274144832999
+  hidden angularVelocity_6 -2.789242715559635 0.09731895389697633 0.006197898588074507
+  hidden linearVelocity_7 0.00021281464839261531 0.061678101193719165 -1.0680477591387574
+  hidden angularVelocity_7 -2.789242690274019 0.09731895187457404 0.006197898586825219
+  translation -0.004152019501481337 -4.577414969620485 3.1191845947089347
+  rotation -0.02152358125191462 0.023079832745024564 0.9995019043356316 1.5713937105736038
   controller "drone_circular_controller"
   controllerArgs [
     "--radius=3.5"

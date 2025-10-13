@@ -12,6 +12,8 @@ if str(CONTROLLERS_ROOT) not in sys.path:
     sys.path.append(str(CONTROLLERS_ROOT))
 
 from diagnostics_pipeline import config as diag_config
+from diagnostics_pipeline.pipeline import DiagnosticsPipeline
+from datetime import datetime
 
 
 class RoboPoseSimulator:
@@ -61,12 +63,17 @@ class RoboPoseSimulator:
         }
 
 
-class DroneController:
+class DroneCircularController:
     """Drone controller with RoboPose and communication."""
     
     def __init__(self):
         self.supervisor = Supervisor()
         self.time_step = int(self.supervisor.getBasicTimeStep())
+        
+        # Initialize diagnostics pipeline (drone owns the pipeline)
+        session_id = f"drone_diagnosis_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.pipeline = DiagnosticsPipeline(session_id)
+        print(f"[drone] Pipeline initialized: {session_id}")
         
         # Parse command line arguments
         arguments = sys.argv[1:]
@@ -75,20 +82,16 @@ class DroneController:
         # Initialize RoboPose simulator
         self.robopose = RoboPoseSimulator(self.supervisor, self.center_def)
         
-        # Initialize receiver for triggers from Spot
-        self.receiver = self.supervisor.getDevice("receiver")
-        if self.receiver is None:
-            print("[drone] Warning: receiver not found")
+        # Get Spot node for customData communication
+        self.spot_node = self.supervisor.getFromDef("SPOT")
+        if self.spot_node is None:
+            print("[drone] Warning: SPOT node not found")
+            self.spot_custom_data_field = None
         else:
-            self.receiver.enable(self.time_step)
-            self.receiver.setChannel(1)
+            self.spot_custom_data_field = self.spot_node.getField("customData")
         
-        # Initialize emitter for sending observations
-        self.emitter = self.supervisor.getDevice("emitter")
-        if self.emitter is None:
-            print("[drone] Warning: emitter not found")
-        else:
-            self.emitter.setChannel(2)
+        # Track last processed message to avoid duplicates
+        self.last_custom_data = ""
         
         # Get drone node and fields for positioning
         self.drone_node = self.supervisor.getSelf()
@@ -101,14 +104,22 @@ class DroneController:
         # State tracking
         self.active_trials = {}  # leg_id -> trial_info
         self.observation_mode = "IDLE"  # IDLE or ACTIVE
-        self.fps_current = diag_config.ROBOPOSE_FPS_IDLE
+        self.fps_current = 10.0  # 観測フレームレート（固定）
         self.last_observation_time = 0
         self.observation_interval = 1.0 / self.fps_current
+        
+        # Diagnosis tracking
+        self.completed_legs = set()  # Legs that have completed all trials
+        self.total_legs = len(diag_config.LEG_IDS)
+        self.total_trials_per_leg = diag_config.TRIAL_COUNT
+        self.trials_completed = {}  # leg_id -> count
+        for leg_id in diag_config.LEG_IDS:
+            self.trials_completed[leg_id] = 0
         
         print("[drone] Controller initialized")
         print(f"[drone] Offset: ({self.offset_x:.2f}, {self.offset_y:.2f}, {self.offset_z:.2f})")
         print(f"[drone] Center: {self.center_def}")
-        print(f"[drone] FPS: idle={diag_config.ROBOPOSE_FPS_IDLE}, trigger={diag_config.ROBOPOSE_FPS_TRIGGER}")
+        print(f"[drone] RoboPose FPS: {self.fps_current}")
     
     def parse_arguments(self, arguments):
         """Parse command line arguments."""
@@ -135,17 +146,32 @@ class DroneController:
         return offset_x, offset_y, offset_z, center_def
     
     def process_triggers(self):
-        """Process incoming trigger messages from Spot."""
-        if self.receiver is None:
+        """Process trigger messages from Spot via customData field."""
+        if self.spot_custom_data_field is None:
             return
         
-        while self.receiver.getQueueLength() > 0:
-            message = self.receiver.getString()
-            self.receiver.nextPacket()
+        # Read customData field
+        custom_data = self.spot_custom_data_field.getSFString()
+        
+        # Skip if no new data
+        if not custom_data or custom_data == self.last_custom_data:
+            return
+        
+        # Update last processed data
+        self.last_custom_data = custom_data
+        
+        # Process each message (newline separated)
+        messages = custom_data.strip().split("\n")
+        
+        for message in messages:
+            if not message:
+                continue
             
             try:
                 parts = message.split("|")
+                
                 if parts[0] == "TRIGGER":
+                    # Trial start trigger
                     leg_id = parts[1]
                     trial_index = int(parts[2])
                     direction = parts[3]
@@ -154,23 +180,112 @@ class DroneController:
                     
                     end_time = start_time + (duration_ms / 1000.0)
                     
+                    # Start trial in pipeline
+                    motor_index = diag_config.TRIAL_MOTOR_INDICES[trial_index - 1]
+                    self.pipeline.start_trial(
+                        leg_id=leg_id,
+                        trial_index=trial_index,
+                        direction=direction,
+                        start_time=start_time,
+                        duration=(duration_ms / 1000.0)
+                    )
+                    
+                    # Store trial info
                     self.active_trials[leg_id] = {
                         "trial_index": trial_index,
                         "direction": direction,
                         "start_time": start_time,
                         "end_time": end_time,
-                        "observations": []
+                        "observations": [],
+                        "body_positions": [],
+                        "initial_body_pos": None,
+                        "motor_index": motor_index  # Store for later use
                     }
+                
+                elif parts[0] == "JOINT_ANGLES":
+                    # Joint angle observation frame
+                    # Format: JOINT_ANGLES|leg_id|trial_index|angle0|angle1|angle2
+                    leg_id = parts[1]
+                    trial_index = int(parts[2])
+                    angle0 = float(parts[3])
+                    angle1 = float(parts[4])
+                    angle2 = float(parts[5])
                     
-                    # Switch to high-frequency observation mode
-                    self.observation_mode = "ACTIVE"
-                    self.fps_current = diag_config.ROBOPOSE_FPS_TRIGGER
-                    self.observation_interval = 1.0 / self.fps_current
+                    # Store joint angles in active trial
+                    if leg_id in self.active_trials:
+                        trial_info = self.active_trials[leg_id]
+                        if trial_info["trial_index"] == trial_index:
+                            current_time = self.supervisor.getTime()
+                            
+                            # Create observation if none exists (to capture all joint angle updates)
+                            # time_step is in milliseconds, convert to seconds for comparison
+                            if not trial_info["observations"] or \
+                               current_time - trial_info["observations"][-1].get("timestamp", 0) > (self.time_step / 1000.0):
+                                # Create new observation with joint angles
+                                observation = {
+                                    "timestamp": current_time,
+                                    "joint_angles": [angle0, angle1, angle2],
+                                    "end_position": [0.0, 0.0, 0.0],  # Will be calculated later
+                                    "base_orientation": [0.0, 0.0, 0.0],
+                                }
+                                trial_info["observations"].append(observation)
+                                
+                                # Record body position
+                                if self.robopose.spot_node:
+                                    body_pos = self.robopose.spot_node.getPosition()
+                                    trial_info["body_positions"].append(list(body_pos))
+                                    
+                                    # Set initial body position if first observation
+                                    if trial_info["initial_body_pos"] is None:
+                                        trial_info["initial_body_pos"] = list(body_pos)
+                                        print(f"[drone] Initial body position for {leg_id}: {body_pos}")
+                            else:
+                                # Update existing observation with joint angles
+                                trial_info["observations"][-1]["joint_angles"] = [angle0, angle1, angle2]
+                            
+                            # Debug: print first joint angle update
+                            if not hasattr(self, '_received_first_joints'):
+                                self._received_first_joints = {}
+                            if leg_id not in self._received_first_joints:
+                                print(f"[drone] Received joint angles for {leg_id} trial {trial_index}: [{angle0:.1f}°, {angle1:.1f}°, {angle2:.1f}°]")
+                                self._received_first_joints[leg_id] = True
+                
+                elif parts[0] == "SELF_DIAG":
+                    # Self-diagnosis data from Spot
+                    # Message format: SELF_DIAG|leg_id|trial_index|theta_samples|theta_avg|theta_final|tau_avg|tau_max|tau_nominal|safety|self_can_raw
+                    leg_id = parts[1]
+                    trial_index = int(parts[2])
+                    theta_samples = int(parts[3])
+                    theta_avg = float(parts[4])
+                    theta_final = float(parts[5])
+                    tau_avg = float(parts[6])
+                    tau_max = float(parts[7])
+                    tau_nominal = float(parts[8])
+                    safety_level = parts[9]
+                    self_can_raw = float(parts[10]) if len(parts) > 10 else 0.35  # Default if not provided
                     
-                    print(f"[drone] Trigger received: {leg_id} trial {trial_index} dir={direction}")
+                    # Store self-diagnosis data
+                    # Note: trial may still be active or just completed
+                    if leg_id in self.active_trials:
+                        self.active_trials[leg_id]["self_diag_data"] = {
+                            "theta_samples": theta_samples,
+                            "theta_avg": theta_avg,
+                            "theta_final": theta_final,
+                            "tau_avg": tau_avg,
+                            "tau_max": tau_max,
+                            "tau_nominal": tau_nominal,
+                            "safety_level": safety_level,
+                            "self_can_raw": self_can_raw,
+                        }
+                        print(f"[drone] Self-diagnosis received: {leg_id} trial {trial_index}, samples={theta_samples}, self_can={self_can_raw:.3f}")
+                    else:
+                        print(f"[drone] Warning: Self-diagnosis for inactive trial: {leg_id}")
+                        print(f"[drone] Warning: Self-diagnosis for inactive trial: {leg_id}")
             
             except Exception as e:
-                print(f"[drone] Error processing trigger: {e}")
+                print(f"[drone] Error processing message: {e}")
+                import traceback
+                traceback.print_exc()
     
     def should_observe(self):
         """Determine if we should make an observation now."""
@@ -198,7 +313,23 @@ class DroneController:
         # Store observation for active trials
         for leg_id, trial_info in list(self.active_trials.items()):
             if trial_info["start_time"] <= current_time <= trial_info["end_time"]:
-                trial_info["observations"].append(observation)
+                # Note: joint_angles will be filled by JOINT_ANGLES message from Spot
+                # Initialize with default values, will be updated when message arrives
+                observation_with_joints = observation.copy()
+                observation_with_joints["joint_angles"] = [0.0, 0.0, 0.0]  # Will be updated
+                
+                trial_info["observations"].append(observation_with_joints)
+                
+                # Record body position
+                if self.robopose.spot_node:
+                    body_pos = self.robopose.spot_node.getPosition()
+                    trial_info["body_positions"].append(list(body_pos))
+                    
+                    # Set initial body position if first observation
+                    if trial_info["initial_body_pos"] is None:
+                        trial_info["initial_body_pos"] = list(body_pos)
+                        print(f"[drone] Initial body position for {leg_id}: {body_pos}")
+                
             elif current_time > trial_info["end_time"]:
                 # Trial complete - send data
                 self.send_trial_data(leg_id, trial_info)
@@ -207,22 +338,141 @@ class DroneController:
         # Switch back to idle mode if no active trials
         if len(self.active_trials) == 0 and self.observation_mode == "ACTIVE":
             self.observation_mode = "IDLE"
-            self.fps_current = diag_config.ROBOPOSE_FPS_IDLE
-            self.observation_interval = 1.0 / self.fps_current
+            # FPSは固定なので変更不要
             print("[drone] Switched to idle observation mode")
     
     def send_trial_data(self, leg_id, trial_info):
-        """Send collected observation data."""
-        if self.emitter is None:
+        """Send collected observation data to pipeline."""
+        obs_count = len(trial_info["observations"])
+        body_positions = trial_info["body_positions"]
+        
+        print(f"[drone] Processing {obs_count} observations for {leg_id} trial {trial_info['trial_index']}")
+        
+        if obs_count == 0:
+            print(f"[drone] Warning: No observations collected for {leg_id}")
             return
         
-        obs_count = len(trial_info["observations"])
-        print(f"[drone] Sending {obs_count} observations for {leg_id} trial {trial_info['trial_index']}")
+        if len(body_positions) != obs_count:
+            print(f"[drone] Warning: Body position count mismatch: {len(body_positions)} vs {obs_count}")
+            return
         
-        # In a real system, this would send the actual observations
-        # For now, we'll send a summary message
-        message = f"DATA|{leg_id}|{trial_info['trial_index']}|{obs_count}"
-        self.emitter.send(message.encode('utf-8'))
+        # Send each observation frame to pipeline with absolute displacement calculation
+        self._send_observations_to_pipeline(leg_id, trial_info)
+    
+    def _send_observations_to_pipeline(self, leg_id, trial_info):
+        """Calculate absolute foot displacement and send frames to pipeline."""
+        observations = trial_info["observations"]
+        body_positions = trial_info["body_positions"]
+        initial_body_pos = trial_info["initial_body_pos"]
+        
+        if not observations or not body_positions or initial_body_pos is None:
+            print(f"[drone] Error: Missing data for {leg_id}")
+            return
+        
+        # Spot leg parameters (approximate)
+        L1, L2, L3 = 0.11, 0.26, 0.26
+        y_offset = -0.25 if 'L' in leg_id else 0.25
+        
+        # Calculate initial foot position in world coordinates
+        # For simplicity, assume joint angles are zero initially
+        # In real system, first observation would provide initial joint angles
+        x_init_local = L2 + L3  # Leg extended forward
+        y_init_local = y_offset
+        z_init_local = 0.0
+        
+        x_init_world = initial_body_pos[0] + x_init_local
+        y_init_world = initial_body_pos[1] + y_init_local
+        z_init_world = initial_body_pos[2] + z_init_local
+        
+        print(f"[drone] {leg_id}: Initial foot position (world): ({x_init_world:.3f}, {y_init_world:.3f}, {z_init_world:.3f})")
+        print(f"[drone] {leg_id}: Initial body position: {initial_body_pos}")
+        
+        # Process each observation frame
+        for i, (obs, body_pos) in enumerate(zip(observations, body_positions)):
+            # Simplified: assume joint angles from observation (in real RoboPose, estimate from image)
+            joint_angles = obs.get("joint_angles", [0.0, 0.0, 0.0])
+            
+            # Debug: Print joint angles for first observation
+            if i == 0:
+                print(f"[drone] {leg_id}: First observation joint angles: {joint_angles}")
+            
+            # Calculate foot position in body-local coordinates using forward kinematics
+            theta1 = math.radians(joint_angles[0])
+            theta2 = math.radians(joint_angles[1])
+            theta3 = math.radians(joint_angles[2])
+            
+            x_local = L2 * math.cos(theta2) + L3 * math.cos(theta2 + theta3)
+            y_local = y_offset + L1 * math.sin(theta1)
+            z_local = -(L2 * math.sin(theta2) + L3 * math.sin(theta2 + theta3))
+            
+            # Calculate absolute foot position in world coordinates
+            x_world = body_pos[0] + x_local
+            y_world = body_pos[1] + y_local
+            z_world = body_pos[2] + z_local
+            
+            # Calculate displacement from initial world position
+            # This accounts for BOTH leg movement AND body movement
+            x_disp = x_world - x_init_world
+            y_disp = y_world - y_init_world
+            z_disp = z_world - z_init_world
+            
+            end_position = [x_disp, y_disp, z_disp]
+            base_orientation = [0.0, 0.0, 0.0]  # Simplified
+            
+            # Send frame to pipeline
+            self.pipeline.record_robo_pose_frame(
+                leg_id=leg_id,
+                joint_angles=joint_angles,
+                end_position=end_position,
+                base_orientation=base_orientation,
+                base_position=body_pos
+            )
+        
+        final_disp = math.sqrt(x_disp**2 + y_disp**2 + z_disp**2)
+        print(f"[drone] {leg_id}: Sent {len(observations)} frames to pipeline, final displacement: {final_disp:.6f}m")
+        print(f"[drone] {leg_id}: Body moved: ({body_positions[-1][0] - initial_body_pos[0]:.3f}, "
+              f"{body_positions[-1][1] - initial_body_pos[1]:.3f}, "
+              f"{body_positions[-1][2] - initial_body_pos[2]:.3f})m")
+        
+        # Get self-diagnosis data from Spot
+        self_diag = trial_info.get("self_diag_data")
+        if self_diag:
+            # Complete trial in pipeline with Spot's self-diagnosis data
+            self.pipeline.complete_trial(
+                leg_id=leg_id,
+                theta_cmd=[],  # Drone doesn't record commanded angles
+                theta_meas=[],  # Drone doesn't record measured angles (uses visual estimation)
+                omega_meas=[],  # Drone doesn't record velocities
+                tau_meas=[],  # Drone doesn't record torques
+                tau_nominal=self_diag["tau_nominal"],
+                safety_level=self_diag["safety_level"],
+                end_time=trial_info["end_time"],
+                spot_can_raw=self_diag.get("self_can_raw")  # Pass Spot's self_can_raw
+            )
+            print(f"[drone] {leg_id}: Trial completed in pipeline with self-diagnosis data")
+            print(f"[drone] {leg_id}: tau_nominal={self_diag['tau_nominal']:.3f}, safety={self_diag['safety_level']}, spot_can={self_diag.get('self_can_raw', 'N/A'):.3f}")
+        else:
+            # Complete trial without self-diagnosis data (shouldn't happen)
+            print(f"[drone] Warning: No self-diagnosis data for {leg_id}, completing with defaults")
+            self.pipeline.complete_trial(
+                leg_id=leg_id,
+                theta_cmd=[],
+                theta_meas=[],
+                omega_meas=[],
+                tau_meas=[],
+                tau_nominal=0.0,
+                safety_level="UNKNOWN",
+                end_time=trial_info["end_time"]
+            )
+        
+        # Track completion
+        self.trials_completed[leg_id] = self.trials_completed.get(leg_id, 0) + 1
+        print(f"[drone] {leg_id}: Completed {self.trials_completed[leg_id]}/{self.total_trials_per_leg} trials")
+        
+        # Check if all legs are done
+        if all(count >= self.total_trials_per_leg for count in self.trials_completed.values()):
+            print("\n[drone] All trials completed! Finalizing diagnosis...")
+            self.finalize_diagnosis()
     
     def update_position(self):
         """Update drone position to track Spot."""
@@ -271,10 +521,66 @@ class DroneController:
             
             # Update position to track Spot
             self.update_position()
+    
+    def finalize_diagnosis(self):
+        """Finalize pipeline and output integrated diagnosis results."""
+        print("\n" + "="*80)
+        print("DRONE: Finalizing Integrated Diagnosis")
+        print("="*80)
+        
+        # Finalize pipeline to compute all probabilities
+        session_record = self.pipeline.finalize()
+        
+        # Import logger for file output
+        from diagnostics_pipeline.logger import DiagnosticsLogger
+        logger = DiagnosticsLogger()
+        
+        # Save session results to file
+        # Use pipeline's session object (SessionState)
+        logger.log_session(self.pipeline.session)
+        
+        print("\n" + "="*80)
+        print("INTEGRATED DIAGNOSTIC RESULTS (from Drone)")
+        print("="*80)
+        
+        # Display results for each leg
+        for leg_id in diag_config.LEG_IDS:
+            leg_state = session_record.legs.get(leg_id)
+            if not leg_state:
+                print(f"\n[{leg_id}] No data available")
+                continue
+            
+            print(f"\n[{leg_id}] Diagnosis Summary:")
+            
+            # Spot self-diagnosis
+            print(f"  Spot self-diagnosis:")
+            print(f"    spot_can (Can-move): {leg_state.spot_can:.3f}")
+            
+            # Drone observation results
+            print(f"  Drone observation:")
+            print(f"    drone_can (Can-move): {leg_state.drone_can:.3f}")
+            
+            # Final diagnosis
+            print(f"  Final diagnosis:")
+            print(f"    Movement: {leg_state.movement_result}")
+            print(f"    Cause: {leg_state.cause_final}")
+            print(f"    p_can: {leg_state.p_can:.3f}")
+            
+            # Display LLM probability distribution
+            print(f"  LLM probability distribution:")
+            for cause, prob in leg_state.p_llm.items():
+                bar = "█" * int(prob * 40)
+                print(f"    {cause:12s}: {prob:.3f} {bar}")
+        
+        print("\n" + "="*80)
+        print(f"Session ID: {session_record.session_id}")
+        print(f"Fallen: {session_record.fallen} (probability: {session_record.fallen_probability:.1%})")
+        print(f"Log saved to: controllers/spot_self_diagnosis/logs/")
+        print("="*80)
 
 
 def main():
-    controller = DroneController()
+    controller = DroneCircularController()
     controller.run()
 
 
