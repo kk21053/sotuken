@@ -15,7 +15,11 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 pkill -9 webots > /dev/null 2>&1
 pkill -9 webots-bin > /dev/null 2>&1
 sleep 2
-timeout 180 webots --mode=fast --no-rendering worlds/sotuken_world.wbt > /dev/null 2>&1
+WEBOTS_DISABLE_BINARY_DIALOG=1 timeout 180 webots --mode=fast --no-rendering --minimize --batch worlds/sotuken_world.wbt > /dev/null 2>&1
+pkill -9 webots > /dev/null 2>&1
+pkill -9 webots-bin > /dev/null 2>&1
+powershell.exe -Command "Get-Process | Where-Object {\$_.ProcessName -match 'chrome|msedge|firefox'} | Where-Object {\$_.MainWindowTitle -match 'Webots'} | Stop-Process -Force" > /dev/null 2>&1
+sleep 1
 python3 view_result.py | grep -A 20 "診断結果"
 
 # パターン2: FL=BURIED
@@ -28,7 +32,11 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 pkill -9 webots > /dev/null 2>&1
 pkill -9 webots-bin > /dev/null 2>&1
 sleep 2
-timeout 180 webots --mode=fast --no-rendering worlds/sotuken_world.wbt > /dev/null 2>&1
+WEBOTS_DISABLE_BINARY_DIALOG=1 timeout 180 webots --mode=fast --no-rendering --minimize --batch worlds/sotuken_world.wbt > /dev/null 2>&1
+pkill -9 webots > /dev/null 2>&1
+pkill -9 webots-bin > /dev/null 2>&1
+powershell.exe -Command "Get-Process | Where-Object {\$_.ProcessName -match 'chrome|msedge|firefox'} | Where-Object {\$_.MainWindowTitle -match 'Webots'} | Stop-Process -Force" > /dev/null 2>&1
+sleep 1
 python3 view_result.py | grep -A 20 "診断結果"
 
 # パターン3: FL=TRAPPED
@@ -41,7 +49,11 @@ find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null
 pkill -9 webots > /dev/null 2>&1
 pkill -9 webots-bin > /dev/null 2>&1
 sleep 2
-timeout 180 webots --mode=fast --no-rendering worlds/sotuken_world.wbt > /dev/null 2>&1
+WEBOTS_DISABLE_BINARY_DIALOG=1 timeout 180 webots --mode=fast --no-rendering --minimize --batch worlds/sotuken_world.wbt > /dev/null 2>&1
+pkill -9 webots > /dev/null 2>&1
+pkill -9 webots-bin > /dev/null 2>&1
+powershell.exe -Command "Get-Process | Where-Object {\$_.ProcessName -match 'chrome|msedge|firefox'} | Where-Object {\$_.MainWindowTitle -match 'Webots'} | Stop-Process -Force" > /dev/null 2>&1
+sleep 1
 python3 view_result.py | grep -A 20 "診断結果"
 
 echo ""

@@ -185,7 +185,7 @@ DEF BURIED_BOX Group {
   ]
 }
 DEF FOOT_TRAP Solid {
-  translation 0.48 0.17 0.0
+  translation 0.0 0.0 -100.0
   children [
     Group {
       children [

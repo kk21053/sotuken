@@ -78,73 +78,6 @@ class DroneObservationAggregator:
                 reduced.append(frame[motor_index])
         return reduced
 
-    def _estimate_weight_on_leg(
-        self, 
-        leg_id: str, 
-        base_positions: Sequence[Vector3],
-        trial_index: int
-    ) -> float:
-        """診断動作中の脚への荷重を推定
-        
-        base_heightの変化から重心移動を検出します。
-        診断動作中にbase_heightが低下している場合、その脚に重心が移動していると推定します。
-        
-        Args:
-            leg_id: 診断中の脚ID（FL, FR, RL, RR）
-            base_positions: 本体の位置履歴
-            trial_index: 試行番号
-            
-        Returns:
-            重心荷重推定値（0.0-1.0、1.0=完全に荷重、0.0=無荷重）
-        """
-        if not base_positions or len(base_positions) < 10:
-            return 0.25  # デフォルト値（均等荷重）
-        
-        # base_heightの変化を計算（z座標）
-        # 診断動作中にbase_heightが低下している場合、その脚に重心が移動している
-        initial_height = sum([pos[2] for pos in base_positions[:5]]) / 5  # 最初の5フレームの平均
-        final_height = sum([pos[2] for pos in base_positions[-5:]]) / 5   # 最後の5フレームの平均
-        height_change = initial_height - final_height  # 正の値=低下（荷重増加）
-        
-        # 高さ変化から荷重を推定
-        # 0.01m（10mm）の低下で荷重0.5増加と仮定
-        weight_change = height_change * 50.0  # 50倍で0.01m→0.5の変化
-        weight = 0.25 + weight_change
-        
-        # 0.0-1.0の範囲にクランプ
-        weight = max(0.0, min(1.0, weight))
-        
-        return weight
-
-    def _compute_joint_movements(self, joint_angles: Sequence[Sequence[float]]) -> Dict[str, float]:
-        """各関節（shoulder, hip, knee）の角度変化量を計算
-        
-        Args:
-            joint_angles: [[shoulder, hip, knee], ...] 形式の角度データ
-            
-        Returns:
-            各関節の最大-最小角度変化量（度）
-        """
-        if not joint_angles or len(joint_angles) == 0:
-            return {"shoulder": 0.0, "hip": 0.0, "knee": 0.0}
-        
-        # 各関節の角度を抽出
-        shoulder_angles = [frame[0] for frame in joint_angles if len(frame) >= 3]
-        hip_angles = [frame[1] for frame in joint_angles if len(frame) >= 3]
-        knee_angles = [frame[2] for frame in joint_angles if len(frame) >= 3]
-        
-        # 各関節の変化量を計算（最大-最小）
-        # 注: joint_anglesは既に度の単位で格納されている
-        shoulder_delta = abs(max(shoulder_angles) - min(shoulder_angles)) if shoulder_angles else 0.0
-        hip_delta = abs(max(hip_angles) - min(hip_angles)) if hip_angles else 0.0
-        knee_delta = abs(max(knee_angles) - min(knee_angles)) if knee_angles else 0.0
-        
-        return {
-            "shoulder": shoulder_delta,
-            "hip": hip_delta,
-            "knee": knee_delta
-        }
-
     def process_trial(
         self,
         leg: LegState,
@@ -154,12 +87,8 @@ class DroneObservationAggregator:
         base_orientations: Sequence[Tuple[float, float, float]],
         base_positions: Sequence[Vector3],
     ) -> None:
-        # 各関節の動きを計算
-        joint_movements = self._compute_joint_movements(joint_angles)
-        
         reduced_angles = self._reduce_joint_series(joint_angles, trial.trial_index)
         print(f"[drone_observer] {leg.leg_id} trial {trial.trial_index}: received {len(joint_angles)} frames, reduced to {len(reduced_angles)} angles, range={min(reduced_angles) if reduced_angles else 0:.2f}~{max(reduced_angles) if reduced_angles else 0:.2f}°")
-        print(f"[drone_observer] {leg.leg_id} trial {trial.trial_index}: joint movements - shoulder={joint_movements['shoulder']:.2f}°, hip={joint_movements['hip']:.2f}°, knee={joint_movements['knee']:.2f}°")
         if not reduced_angles:
             delta_theta = 0.0
         else:
@@ -214,10 +143,6 @@ class DroneObservationAggregator:
                     reversals += 1
         base_height = mean([pos[2] for pos in base_positions]) if base_positions else 0.0
 
-        # 重心荷重の推定（base_positionから推論）
-        # 診断動作中の脚の荷重を推定：base_heightが低い＝その脚に重心が乗っている
-        weight_on_leg = self._estimate_weight_on_leg(leg.leg_id, base_positions, trial.trial_index)
-        
         features = {
             "trial_index": trial.trial_index,  # 試行番号を記録
             "delta_theta_deg": delta_theta,
@@ -230,12 +155,6 @@ class DroneObservationAggregator:
             "max_roll": max_roll,
             "max_pitch": max_pitch,
             "fallen": bool(fallen),
-            # 各関節の動き（新規追加）
-            "shoulder_delta": joint_movements["shoulder"],
-            "hip_delta": joint_movements["hip"],
-            "knee_delta": joint_movements["knee"],
-            # 重心荷重（新規追加）
-            "weight_on_leg": weight_on_leg,
         }
         trial.ok = bool(end_positions)
         
@@ -348,22 +267,14 @@ class DroneObservationAggregator:
             'max_roll': median([f['max_roll'] for f in history]),
             'max_pitch': median([f['max_pitch'] for f in history]),
             'fallen': any(f['fallen'] for f in history),  # fallenは論理和
-            # 各関節の中央値
-            'shoulder_delta': median([f['shoulder_delta'] for f in history]),
-            'hip_delta': median([f['hip_delta'] for f in history]),
-            'knee_delta': median([f['knee_delta'] for f in history]),
-            # 重心荷重の中央値
-            'weight_on_leg': median([f['weight_on_leg'] for f in history]),
         }
         
         # 中央値特徴量を使って拘束原因を推定
         median_distribution = self._estimate_cause_distribution(median_features)
         
         print(f"[drone_observer] {leg_id}: ロバスト統計（中央値）適用")
-        print(f"  中央値delta_θ: {median_features['delta_theta_deg']:.2f}°")
-        print(f"  中央値end_disp: {median_features['end_disp']*1000:.2f}mm")
-        print(f"  中央値関節: shoulder={median_features['shoulder_delta']:.2f}°, hip={median_features['hip_delta']:.2f}°, knee={median_features['knee_delta']:.2f}°")
-        print(f"  重心荷重: weight_on_leg={median_features['weight_on_leg']:.2f} (0=無荷重, 1=完全荷重)")
+        print(f"  中央値delta_θ: {median_features['delta_theta_deg']:.2f}° (元データ: {[round(f['delta_theta_deg'], 2) for f in history]})")
+        print(f"  中央値end_disp: {median_features['end_disp']*1000:.2f}mm (元データ: {[round(f['end_disp']*1000, 2) for f in history]}mm)")
         print(f"  推定分布: NONE={median_distribution.get('NONE', 0):.3f}, TRAPPED={median_distribution.get('TRAPPED', 0):.3f}, BURIED={median_distribution.get('BURIED', 0):.3f}")
         
         return median_distribution
@@ -385,11 +296,6 @@ class DroneObservationAggregator:
         reversals = features.get("reversals", 0.0)
         delta_theta_deg = features.get("delta_theta_deg", 0.0)  # デフォルトを0.0に統一
         
-        # 各関節の動き
-        shoulder_delta = features.get("shoulder_delta", 0.0)
-        hip_delta = features.get("hip_delta", 0.0)
-        knee_delta = features.get("knee_delta", 0.0)
-        
         # 転倒検出（最優先）
         fallen = features.get("fallen", False)
         max_roll = features.get("max_roll", 0.0)
@@ -408,92 +314,70 @@ class DroneObservationAggregator:
                 "FALLEN": fallen_confidence,
             })
         
-        # ハイブリッド判定閾値（実機対応）
-        # end_dispを主要判定基準、関節パターンを補助的に使用
+        # 基本的な閾値（ロバスト統計の中央値データから最適化）
+        # 実機対応: 物理的拘束を確実に検出し、正常動作との明確な分離を保証
+        # 後ろ脚(RL, RR)は構造上、前脚より変位が小さくなりやすい特性を考慮
+        TRAPPED_ANGLE_MIN = 2.0           # TRAPPEDでは関節が動く（度）
+        BURIED_ANGLE_THRESHOLD = 0.8      # 完全に動かない閾値（度）
+        TRAPPED_DISPLACEMENT_MAX = 0.012  # TRAPPEDでは足先が制限される（12mm）
+        BURIED_DISPLACEMENT_THRESHOLD = 0.005   # 完全に埋まっている閾値（5mm）
+        NORMAL_DISPLACEMENT_MIN = 0.015   # 正常時の最小変位（15mm）
         
-        # BURIED判定の閾値（最優先）
-        BURIED_END_DISP_MAX = 0.002  # 足先がほとんど動かない（2mm）
-        BURIED_KNEE_MAX = 1.0        # kneeもほとんど動かない（度）
+        # 三段階判定ロジック（優先度順）:
+        # 1. BURIED: delta_θ < 0.8° AND end_disp < 5mm (関節も足先も動かない)
+        # 2. TRAPPED: delta_θ >= 2.0° AND 5mm < end_disp < 12mm (関節は動くが足先は制限)
+        # 3. NONE: end_disp >= 15mm (正常動作)
+        # ★重要★: 足先が15mm以上動く場合は、関節角度に関わらず正常と判定
         
-        # TRAPPED判定の閾値
-        TRAPPED_END_DISP_MIN = 0.002  # BURIEDより大きい（2mm以上）
-        TRAPPED_END_DISP_MAX = 0.009  # 足先は制限される（9mm未満）
-        TRAPPED_HIP_MIN = 2.5         # hipは少しだけ動く（2.5度以上）
-        
-        # TANGLED判定の閾値
-        TANGLED_HIP_MIN = 10.0        # hipは明確に動く（度）
-        TANGLED_SHOULDER_MIN = 10.0   # shoulderは明確に動く（度）
-        TANGLED_END_DISP_MAX = 0.020  # 足先は制限される（20mm）
-        
-        # NORMAL判定の閾値
-        NORMAL_END_DISP_MIN = 0.0115  # 足先が十分動く（11.5mm以上）
-        
-        # ==============================================================
-        # ハイブリッド判定（end_disp主導 + 関節パターン補助）
-        # ==============================================================
-        
-        # BURIED（埋まる）: 足先がほとんど動かず、kneeもほとんど動かない（最優先）
-        buried_cond_end_disp = end_disp < BURIED_END_DISP_MAX
-        buried_cond_knee = knee_delta < BURIED_KNEE_MAX
-        
-        if buried_cond_end_disp and buried_cond_knee:
-            score_buried = clamp(0.90)
-            print(f"[BURIED判定] end_disp={end_disp*1000:.2f}mm < {BURIED_END_DISP_MAX*1000:.0f}mm ✓, knee={knee_delta:.2f}° < {BURIED_KNEE_MAX}° ✓ → score={score_buried:.3f}")
+        # BURIED（埋まる）: 関節も足先もほとんど動かない（最優先）
+        buried_cond1 = end_disp < BURIED_DISPLACEMENT_THRESHOLD
+        buried_cond2 = delta_theta_deg < BURIED_ANGLE_THRESHOLD
+        if buried_cond1 and buried_cond2:
+            score_buried = clamp(0.85)
         else:
             score_buried = 0.0
-            print(f"[BURIED判定] end_disp={end_disp*1000:.2f}mm<{BURIED_END_DISP_MAX*1000:.0f}mm={buried_cond_end_disp}, knee={knee_delta:.2f}°<{BURIED_KNEE_MAX}°={buried_cond_knee} → score=0")
         
-        # 重心荷重の取得
-        weight_on_leg = features.get("weight_on_leg", 0.25)
-        
-        # TRAPPED（挟まる）: 足先は制限されるが、hipは動く
+        # TRAPPED（挟まる）: 関節は動くが足先が制限される
+        # ★重要★: TRAPPEDの特徴
+        # - 関節は動く（delta_θ >= 2.0度）
+        # - 足先は制限される（5mm < end_disp < 12mm）
+        # ★正常判定の優先★: 足先が15mm以上動く場合は正常と判定（誤検出防止）
         # BURIEDでない場合のみ判定
-        if score_buried < 0.1:
+        if not (buried_cond1 and buried_cond2):
             # 正常判定の優先: 足先が十分動く場合はTRAPPEDと判定しない
-            if end_disp >= NORMAL_END_DISP_MIN:
+            if end_disp >= NORMAL_DISPLACEMENT_MIN:
                 score_trapped = 0.0
-                print(f"[TRAPPED判定] end_disp={end_disp*1000:.2f}mm >= {NORMAL_END_DISP_MIN*1000:.0f}mm → 正常動作、TRAPPED=0")
+                print(f"[TRAPPED判定] end_disp={end_disp*1000:.2f}mm >= {NORMAL_DISPLACEMENT_MIN*1000:.0f}mm → 正常動作、TRAPPED=0")
             else:
-                trapped_cond_end_disp = TRAPPED_END_DISP_MIN <= end_disp < TRAPPED_END_DISP_MAX
-                trapped_cond_hip = hip_delta >= TRAPPED_HIP_MIN
-                
-                # 重心補正: 重心が乗っている脚は動きにくいため、閾値を緩和
-                # 条件: weight_on_leg > 0.35 かつ end_disp >= 9mm かつ hip_delta < 2.5° の場合、正常と判定
-                # hip_delta < 2.5°の条件により、実際にTRAPPEDで動いている脚(hip >= 2°)を除外
-                if weight_on_leg > 0.35 and end_disp >= 0.009 and hip_delta < 2.5:
-                    score_trapped = 0.0
-                    print(f"[TRAPPED判定] 重心荷重補正: weight={weight_on_leg:.2f}>0.35, end_disp={end_disp*1000:.2f}mm>=9mm, hip={hip_delta:.2f}°<2.5° → 正常動作、TRAPPED=0")
-                # 条件を満たす場合にTRAPPEDと判定
-                elif trapped_cond_end_disp and trapped_cond_hip:
+                trapped_cond1 = delta_theta_deg >= TRAPPED_ANGLE_MIN  # 関節は動く
+                trapped_cond2 = BURIED_DISPLACEMENT_THRESHOLD < end_disp < TRAPPED_DISPLACEMENT_MAX  # 足先は制限される（BURIEDより大きい）
+                if trapped_cond1 and trapped_cond2:
                     # 足先の変位が小さいほどTRAPPEDの確率が高い
-                    # ただし、重心荷重が高い場合はスコアを下げる
-                    base_score = 0.80 + 0.15 * (1.0 - end_disp / TRAPPED_END_DISP_MAX)
-                    weight_penalty = weight_on_leg * 0.3  # 重心が乗るほどスコアを下げる
-                    score_trapped = clamp(base_score - weight_penalty)
-                    print(f"[TRAPPED判定] {TRAPPED_END_DISP_MIN*1000:.0f}mm <= end_disp={end_disp*1000:.2f}mm < {TRAPPED_END_DISP_MAX*1000:.0f}mm ✓, hip={hip_delta:.2f}° >= {TRAPPED_HIP_MIN}° ✓, weight_on_leg={weight_on_leg:.2f} → score={score_trapped:.3f}")
+                    # 確実に検出するため、最小スコアを0.75に設定
+                    score_trapped = clamp(0.75 + 0.20 * (1.0 - end_disp / TRAPPED_DISPLACEMENT_MAX))
+                    print(f"[TRAPPED判定] delta_θ={delta_theta_deg:.2f}° >= {TRAPPED_ANGLE_MIN}° ✓, {BURIED_DISPLACEMENT_THRESHOLD*1000:.0f}mm < end_disp={end_disp*1000:.2f}mm < {TRAPPED_DISPLACEMENT_MAX*1000:.0f}mm ✓ → score={score_trapped:.3f}")
                 else:
                     score_trapped = 0.0
-                    print(f"[TRAPPED判定] {TRAPPED_END_DISP_MIN*1000:.0f}mm<=end_disp={end_disp*1000:.2f}mm<{TRAPPED_END_DISP_MAX*1000:.0f}mm={trapped_cond_end_disp}, hip={hip_delta:.2f}°>={TRAPPED_HIP_MIN}°={trapped_cond_hip} → score=0")
+                    print(f"[TRAPPED判定] delta_θ={delta_theta_deg:.2f}° >= {TRAPPED_ANGLE_MIN}° = {trapped_cond1}, {BURIED_DISPLACEMENT_THRESHOLD*1000:.0f}mm < end_disp={end_disp*1000:.2f}mm < {TRAPPED_DISPLACEMENT_MAX*1000:.0f}mm = {trapped_cond2} → score=0")
         else:
             score_trapped = 0.0
         
 
-        # TANGLED（絡まる）: hipとshoulderは明確に動くが、足先は制限される
-        # BURIED、TRAPPEDでない場合のみ判定
-        if score_buried < 0.1 and score_trapped < 0.1:
-            tangled_cond_hip = hip_delta >= TANGLED_HIP_MIN
-            tangled_cond_shoulder = shoulder_delta >= TANGLED_SHOULDER_MIN
-            tangled_cond_end_disp = end_disp < TANGLED_END_DISP_MAX
-            
-            if tangled_cond_hip and tangled_cond_shoulder and tangled_cond_end_disp:
-                # 関節の動きが大きいほどTANGLEDの確率が高い
-                hip_score = min(0.3, (hip_delta - TANGLED_HIP_MIN) / 30.0)
-                shoulder_score = min(0.3, (shoulder_delta - TANGLED_SHOULDER_MIN) / 30.0)
-                score_tangled = clamp(0.6 + hip_score + shoulder_score)
-                print(f"[TANGLED判定] hip={hip_delta:.2f}° >= {TANGLED_HIP_MIN}° ✓, shoulder={shoulder_delta:.2f}° >= {TANGLED_SHOULDER_MIN}° ✓, end_disp={end_disp*1000:.2f}mm < {TANGLED_END_DISP_MAX*1000:.0f}mm ✓ → score={score_tangled:.3f}")
+        # TANGLED（絡まる）: 異常な経路パターン
+        # - TRAPPEDやBURIEDではない
+        # - 非常に不規則な経路（極端なpath_straightness）
+        # - 異常に多い反転回数
+        # 重要: 正常な診断動作でも5-7回程度のreversalsは発生するため、閾値を高く設定
+        path_straightness = path_length / (end_disp + config.EPSILON) if end_disp > 0 else 0.0
+        if score_trapped < 0.1 and score_buried < 0.1:  # TRAPPEDやBURIEDでない場合のみ
+            # 極端に不規則な経路のみをTANGLEDと判定
+            if path_straightness > 30.0 or reversals > 10:
+                # 異常度が高いほどスコアが高い
+                straightness_score = min(0.5, (path_straightness - 30.0) / 100.0) if path_straightness > 30.0 else 0.0
+                reversal_score = min(0.5, (reversals - 10) * 0.05) if reversals > 10 else 0.0
+                score_tangled = clamp(straightness_score + reversal_score)
             else:
                 score_tangled = 0.0
-                print(f"[TANGLED判定] hip={hip_delta:.2f}°>={TANGLED_HIP_MIN}°={tangled_cond_hip}, shoulder={shoulder_delta:.2f}°>={TANGLED_SHOULDER_MIN}°={tangled_cond_shoulder}, end_disp={end_disp*1000:.2f}mm<{TANGLED_END_DISP_MAX*1000:.0f}mm={tangled_cond_end_disp} → score=0")
         else:
             score_tangled = 0.0
         
