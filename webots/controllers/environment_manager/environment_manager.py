@@ -26,10 +26,11 @@ LEG_NAME_TO_ID = {
 }
 
 SAND_PATCH_DEF = "SAND_PATCH"
+BURIED_BOX_DEF = "BURIED_BOX"  # 実際に使われている砂のオブジェクト
 FOOT_TRAP_DEF = "FOOT_TRAP"
 FOOT_VINE_DEF = "FOOT_VINE"
 WORLD_INFO_DEF = "WORLD_INFO"
-PATCH_HIDDEN_TRANSLATION = [0.0, 0.0, -10.0]
+PATCH_HIDDEN_TRANSLATION = [0.0, 0.0, -100.0]
 CONFIG_PATH = Path(__file__).resolve().parents[2] / "config" / "scenario.ini"
 
 
@@ -88,6 +89,7 @@ def set_vec3(field, vector, label):
     try:
         x, y, z = vector
         field.setSFVec3f([float(x), float(y), float(z)])
+        print(f"[environment] set_vec3: {label} → ({x:.2f}, {y:.2f}, {z:.2f})")
     except (TypeError, ValueError, RuntimeError) as exc:
         print(f"[environment] warning: could not set {label}: {exc}")
 
@@ -142,18 +144,34 @@ def update_contact_properties(supervisor, material, friction, bounce):
 
 
 def hide_node(supervisor, def_name):
+    """ノードを非表示位置に移動"""
     node = supervisor.getFromDef(def_name)
     if node is None:
+        print(f"[environment] hide_node: {def_name} not found")
         return
+    
     translation_field = node.getField("translation")
     if translation_field:
+        current_pos = translation_field.getSFVec3f()
+        print(f"[environment] hide_node: {def_name} 現在位置=({current_pos[0]:.2f}, {current_pos[1]:.2f}, {current_pos[2]:.2f})")
         set_vec3(translation_field, PATCH_HIDDEN_TRANSLATION, f"hide {def_name}")
+        new_pos = translation_field.getSFVec3f()
+        print(f"[environment] hide_node: {def_name} 新位置=({new_pos[0]:.2f}, {new_pos[1]:.2f}, {new_pos[2]:.2f})")
+    else:
+        print(f"[environment] hide_node: {def_name} has no translation field")
 
 
 def apply_sand_patch(supervisor, config, sand):
+    """砂パッチ（BURIED環境）を適用
+    
+    注意: この関数はBURIED環境が設定されている場合のみ呼び出されるべき
+    """
     sand_patch = supervisor.getFromDef(SAND_PATCH_DEF)
+    
+    # SAND_PATCHが見つからない場合、エラーを出して終了
     if sand_patch is None:
-        print("[environment] warning: sand patch not found")
+        print("[environment] ERROR: SAND_PATCH not found. BURIED environment cannot be applied.")
+        print("[environment] BURIED_BOX is NOT automatically shown (intended behavior).")
         return
 
     foot = config.get("buriedFoot", "front_left")
@@ -292,37 +310,40 @@ if __name__ == "__main__":
     supervisor = Supervisor()
     config, sand, trap, vine = load_config()
     
+    # 各脚の環境設定を取得
+    fl_env = config.get("fl_environment", "NONE").upper()
+    fr_env = config.get("fr_environment", "NONE").upper()
+    rl_env = config.get("rl_environment", "NONE").upper()
+    rr_env = config.get("rr_environment", "NONE").upper()
+    
+    all_envs = {fl_env, fr_env, rl_env, rr_env}
+    
+    print("[environment] ========================================")
+    print("[environment] Environment Manager 起動")
+    print("[environment] ========================================")
+    print("[environment] 各脚の環境設定:")
+    print(f"  FL: {fl_env}")
+    print(f"  FR: {fr_env}")
+    print(f"  RL: {rl_env}")
+    print(f"  RR: {rr_env}")
+    
+    # 後方互換性: scenario フィールドも確認
     scenario = config.get("scenario", "none")
-    if scenario == "sand_burial":
-        apply_sand_patch(supervisor, config, sand)
-        hide_node(supervisor, FOOT_TRAP_DEF)
-        hide_node(supervisor, FOOT_VINE_DEF)
-    elif scenario == "foot_trap":
-        apply_foot_trap(supervisor, config, trap)
-        hide_node(supervisor, SAND_PATCH_DEF)
-        hide_node(supervisor, FOOT_VINE_DEF)
-    elif scenario == "foot_vine":
-        apply_foot_vine(supervisor, config, vine)
-        hide_node(supervisor, SAND_PATCH_DEF)
-        hide_node(supervisor, FOOT_TRAP_DEF)
-    else:
-        hide_node(supervisor, SAND_PATCH_DEF)
-        hide_node(supervisor, FOOT_TRAP_DEF)
-        hide_node(supervisor, FOOT_VINE_DEF)
+    print(f"[environment] シナリオ: {scenario}")
+    print(f"[environment] 環境判定: BURIED={'BURIED' in all_envs}, TRAPPED={'TRAPPED' in all_envs}, TANGLED={'TANGLED' in all_envs}")
     
-    print("[environment] Setup complete")
+    # ★★★ 重要: ワールドファイルで既に設定済みなので、ここでは何もしない ★★★
+    # set_environment.py が既にワールドファイルを正しく設定しているため、
+    # environment_manager は単に監視のみを行う
     
-    # Monitor trap position periodically
-    trap_node = supervisor.getFromDef(FOOT_TRAP_DEF) if scenario == "foot_trap" else None
-    step_count = 0
-    check_interval = 625  # Check every 10 seconds (16ms * 625 = 10s)
+    print("[environment] ========================================")
+    print("[environment] ワールドファイルの初期設定を使用")
+    print("[environment] （environment_managerは位置を変更しません）")
+    print("[environment] ========================================")
     
+    # 何もしない - ワールドファイルの設定をそのまま維持
+    print("[environment] Setup complete - idle mode")
+    
+    # 単純なアイドルループ（何もしない）
     while supervisor.step(int(supervisor.getBasicTimeStep())) != -1:
-        step_count += 1
-        if trap_node and step_count % check_interval == 0:
-            translation_field = trap_node.getField("translation")
-            if translation_field:
-                pos = translation_field.getSFVec3f()
-                print(f"[environment] TRAP position at t={step_count*16/1000:.1f}s: ({pos[0]:.3f}, {pos[1]:.3f}, {pos[2]:.3f})")
         pass
-    main()
