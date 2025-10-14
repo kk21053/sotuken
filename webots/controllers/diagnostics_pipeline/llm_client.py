@@ -80,12 +80,13 @@ class LLMAnalyzer:
             leg.cause_final = "NONE"
             return distribution
         
-        # ルール②: 両方が0.3以下 → 動かない、拘束原因=確率分布の最大値（NONE以外）
+        # ルール②: 両方が0.3以下 → 動かない、拘束原因=確率分布の最大値（NONE除外）
         elif spot_can <= 0.3 and drone_can <= 0.3:
             leg.movement_result = "動かない"
             leg.p_can = (spot_can + drone_can) / 2
             
-            # 確率分布から最大値を見つける（動かないのでNONE以外から選択）
+            # 確率分布から最大値を見つける（NONE以外から選択）
+            # 「動かない」場合は正常(NONE)ではないため
             max_cause = max(
                 (v, k) for k, v in p_drone.items() if k != "NONE"
             )[1]
@@ -126,7 +127,7 @@ class LLMAnalyzer:
             leg.movement_result = "一部動く"
             leg.p_can = (spot_can + drone_can) / 2
             
-            # 確率分布から最大値を見つける
+            # 確率分布から最大値を見つける（仕様通り）
             max_cause = max(p_drone.items(), key=lambda x: x[1])[0]
             
             # 中間的な分布を作成（確信度は低め）
