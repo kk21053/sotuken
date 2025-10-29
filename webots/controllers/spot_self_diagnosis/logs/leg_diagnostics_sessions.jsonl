@@ -312,3 +312,8 @@
 {"timestamp": 1760449272.6140244, "session_id": "spot_diagnosis_20251014_224110", "fallen": false, "fallen_probability": 0.0, "legs": {}}
 {"timestamp": 1760450386.0062895, "session_id": "spot_diagnosis_20251014_225943", "fallen": false, "fallen_probability": 0.0, "legs": {}}
 {"timestamp": 1760450480.390529, "session_id": "spot_diagnosis_20251014_230118", "fallen": false, "fallen_probability": 0.0, "legs": {}}
+{"timestamp": 1761698416.0195138, "session_id": "spot_diagnosis_20251029_094001", "fallen": false, "fallen_probability": 0.0, "legs": {}}
+{"timestamp": 1761698557.8186114, "session_id": "spot_diagnosis_20251029_094223", "fallen": false, "fallen_probability": 0.0, "legs": {}}
+{"timestamp": 1761698619.1469471, "session_id": "spot_diagnosis_20251029_094324", "fallen": false, "fallen_probability": 0.0, "legs": {}}
+{"timestamp": 1761698892.8085191, "session_id": "spot_diagnosis_20251029_094758", "fallen": false, "fallen_probability": 0.0, "legs": {}}
+{"timestamp": 1761700999.5054328, "session_id": "spot_diagnosis_20251029_102303", "fallen": false, "fallen_probability": 0.0, "legs": {}}

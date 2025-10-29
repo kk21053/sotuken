@@ -8,6 +8,12 @@ LEG_IDS: Tuple[str, ...] = ("FL", "FR", "RL", "RR")
 # 仕様: 拘束原因のラベル（正常、故障、埋まる、挟まる、絡まる、転倒）
 CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN")
 
+# LLM設定
+# プロンプト改善により、Llama 3.2 3Bが真の推論を行うように変更。
+# 答えのヒントなし、LLMが自分でルールを適用して判定します。
+USE_LLM: bool = True  # True=Ollama LLM使用（汎用的推論）, False=ルールベース（高速）
+LLM_MODEL: str = "llama3.2:3b"  # Ollamaモデル名（llama3.2:3b推奨、1bも動作可能）
+
 # 仕様ステップ1: 各脚に対して6回ずつ内部診断（各関節を両方向にテスト）
 TRIAL_COUNT: int = 6
 TRIAL_PATTERN: Tuple[str, ...] = ("+", "-", "+", "-", "+", "-")

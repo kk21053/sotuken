@@ -338,7 +338,7 @@ DEF FOOT_TRAP Solid {
   locked TRUE
 }
 DEF FOOT_VINE Solid {
-  translation 0.48 0.17 0.05
+  translation 0.0 0.0 -100.0
   children [
     Shape {
       appearance PBRAppearance {

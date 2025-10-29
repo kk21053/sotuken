@@ -71,7 +71,10 @@ class DiagnosticsPipeline:
     def __init__(self, session_id: str) -> None:
         self.self_diag = SelfDiagnosisAggregator()
         self.drone = DroneObservationAggregator()
-        self.llm = LLMAnalyzer()
+        self.llm = LLMAnalyzer(
+            model_name=config.LLM_MODEL,
+            use_llm=config.USE_LLM
+        )
         self.logger = DiagnosticsLogger()
         self.start_session(session_id)
 

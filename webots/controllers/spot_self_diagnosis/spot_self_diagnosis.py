@@ -245,6 +245,17 @@ class SpotDiagnosticsController:
         self.message_queue.append(message)
         self._flush_messages()
     
+    def send_spot_can_to_drone(self, leg_id, spot_can):
+        """仕様ステップ5: spotはspot_canをドローンへ送る
+        
+        各脚の全6回の試行が終了した後、シグモイド変換されたspot_canを送信する。
+        """
+        # Message format: "SPOT_CAN|leg_id|spot_can"
+        message = f"SPOT_CAN|{leg_id}|{spot_can:.6f}"
+        self.message_queue.append(message)
+        self._flush_messages()
+        print(f"[spot] 仕様ステップ5: {leg_id}のspot_can={spot_can:.3f}をドローンへ送信")
+    
     def send_observation_frame(self, leg_id, trial_index):
         """Send current joint angles to drone for visual observation simulation.
         
@@ -684,6 +695,19 @@ class SpotDiagnosticsController:
                 for _ in range(10):
                     if self.robot.step(self.time_step) == -1:
                         return
+            
+            # 仕様ステップ3,5: 全6回の試行が終了したら、spot_canを計算してドローンに送信
+            print(f"\n[spot] 仕様ステップ3: {leg_id}の全試行終了、spot_can計算")
+            leg_state = self.pipeline.session.legs.get(leg_id)
+            if leg_state and hasattr(leg_state, 'spot_can'):
+                self.send_spot_can_to_drone(leg_id, leg_state.spot_can)
+            else:
+                print(f"[spot] Warning: {leg_id}のspot_canが計算されていません")
+            
+            # Pause before next leg
+            for _ in range(20):
+                if self.robot.step(self.time_step) == -1:
+                    return
         
         print("\n[spot] All legs diagnosed - finalizing pipeline...")
         

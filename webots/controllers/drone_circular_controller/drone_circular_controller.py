@@ -321,7 +321,23 @@ class DroneCircularController:
                         print(f"[drone] Self-diagnosis received: {leg_id} trial {trial_index}, samples={theta_samples}, self_can={self_can_raw:.3f}")
                     else:
                         print(f"[drone] Warning: Self-diagnosis for inactive trial: {leg_id}")
-                        print(f"[drone] Warning: Self-diagnosis for inactive trial: {leg_id}")
+                
+                elif parts[0] == "SPOT_CAN":
+                    # 仕様ステップ5: Spotから送られたspot_canを受信
+                    # Message format: SPOT_CAN|leg_id|spot_can
+                    leg_id = parts[1]
+                    spot_can = float(parts[2])
+                    
+                    # Store spot_can in pipeline's session
+                    leg_state = self.pipeline.session.ensure_leg(leg_id)
+                    leg_state.spot_can = spot_can
+                    
+                    print(f"[drone] 仕様ステップ5受信: {leg_id}のspot_can={spot_can:.3f}")
+                    
+                    # Track that this leg's spot_can has been received
+                    if not hasattr(self, 'spot_can_received'):
+                        self.spot_can_received = {}
+                    self.spot_can_received[leg_id] = True
             
             except Exception as e:
                 print(f"[drone] Error processing message: {e}")
