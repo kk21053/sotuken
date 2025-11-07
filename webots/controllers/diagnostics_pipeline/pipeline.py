@@ -8,7 +8,8 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from . import config
 from .drone_observer import DroneObservationAggregator
 from .fusion import select_cause
-from .llm_client import LLMAnalyzer
+from .llm_client import RuleBasedAnalyzer
+from .llm_advanced import get_llm_analyzer
 from .logger import DiagnosticsLogger
 from .models import LegState, SessionState, TrialResult
 from .self_diagnosis import SelfDiagnosisAggregator
@@ -71,10 +72,18 @@ class DiagnosticsPipeline:
     def __init__(self, session_id: str) -> None:
         self.self_diag = SelfDiagnosisAggregator()
         self.drone = DroneObservationAggregator()
-        self.llm = LLMAnalyzer(
-            model_name=config.LLM_MODEL,
-            use_llm=config.USE_LLM
-        )
+        self.llm = RuleBasedAnalyzer()
+        
+        # Advanced LLM analyzer (optional)
+        self.llm_advanced = None
+        if config.USE_LLM_ADVANCED:
+            print("[pipeline] Initializing advanced LLM analyzer...")
+            self.llm_advanced = get_llm_analyzer(model_path=config.LLM_MODEL_PATH)
+            if self.llm_advanced and self.llm_advanced.enabled:
+                print(f"[pipeline] Advanced LLM enabled (confidence threshold: {config.LLM_CONFIDENCE_THRESHOLD})")
+            else:
+                print("[pipeline] Advanced LLM initialization failed, using rule-based only")
+        
         self.logger = DiagnosticsLogger()
         self.start_session(session_id)
 
@@ -196,9 +205,28 @@ class DiagnosticsPipeline:
         )
         self.session.fallen = self.session.fallen or self.drone.fallen
 
-        # 仕様ステップ7: ルールベースLLMによる判定
-        # LLMがspot_can, drone_can, 確率分布を受け取り、4つのルールで判定
-        self.llm.infer(leg)
+        # 仕様ステップ7: ルールベース診断（信頼度付き）
+        distribution, confidence = self.llm.infer_with_confidence(leg)
+        
+        # 低信頼度の場合、Advanced LLMで再診断
+        if (config.USE_LLM_ADVANCED and 
+            self.llm_advanced and 
+            self.llm_advanced.enabled and
+            confidence <= config.LLM_CONFIDENCE_THRESHOLD):
+            
+            print(f"[pipeline] {leg.leg_id}: Low confidence ({confidence:.1%}), invoking LLM...")
+            enhanced_distribution = self.llm_advanced.diagnose(leg, distribution, confidence)
+            
+            # LLM結果で更新
+            leg.p_llm = enhanced_distribution
+            leg.cause_final = max(enhanced_distribution.items(), key=lambda x: x[1])[0]
+            new_confidence = max(enhanced_distribution.values())
+            
+            print(f"[pipeline] {leg.leg_id}: LLM diagnosis complete (new confidence: {new_confidence:.1%})")
+        else:
+            # ルールベース結果をそのまま使用
+            if confidence > config.LLM_CONFIDENCE_THRESHOLD:
+                print(f"[pipeline] {leg.leg_id}: High confidence ({confidence:.1%}), using rule-based result")
         
         # ログ出力
         print(f"[Fusion] {leg.leg_id}:")
@@ -207,6 +235,7 @@ class DiagnosticsPipeline:
         print(f"  判定: {leg.movement_result}")
         print(f"  拘束原因: {leg.cause_final}")
         print(f"  最終p_can: {leg.p_can:.3f}")
+        print(f"  信頼度: {confidence:.1%}")
 
         self._trial_counts[leg_id] = self._trial_counts.get(leg_id, 0) + 1
         self.logger.log_trial(self.session.session_id, leg, trial, self.session.fallen)

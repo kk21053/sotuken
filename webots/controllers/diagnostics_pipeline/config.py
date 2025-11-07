@@ -8,12 +8,6 @@ LEG_IDS: Tuple[str, ...] = ("FL", "FR", "RL", "RR")
 # 仕様: 拘束原因のラベル（正常、故障、埋まる、挟まる、絡まる、転倒）
 CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN")
 
-# LLM設定
-# プロンプト改善により、Llama 3.2 3Bが真の推論を行うように変更。
-# 答えのヒントなし、LLMが自分でルールを適用して判定します。
-USE_LLM: bool = True  # True=Ollama LLM使用（汎用的推論）, False=ルールベース（高速）
-LLM_MODEL: str = "llama3.2:3b"  # Ollamaモデル名（llama3.2:3b推奨、1bも動作可能）
-
 # 仕様ステップ1: 各脚に対して6回ずつ内部診断（各関節を両方向にテスト）
 TRIAL_COUNT: int = 6
 TRIAL_PATTERN: Tuple[str, ...] = ("+", "-", "+", "-", "+", "-")
@@ -60,4 +54,11 @@ JSONL_EVENT_FILENAME: str = "leg_diagnostics_events.jsonl"
 JSONL_SESSION_FILENAME: str = "leg_diagnostics_sessions.jsonl"
 
 EPSILON: float = 1e-6
+
+# Advanced LLM settings (Jetson Orin Nano Super)
+USE_LLM_ADVANCED: bool = False  # LLM診断を有効化するか（デフォルト: 無効）
+LLM_CONFIDENCE_THRESHOLD: float = 0.6  # この値以下の信頼度でLLMを起動
+LLM_MODEL_PATH: str = "models/llama-3.2-3b-instruct-q4_k_m.gguf"
+MANUAL_PDF_PATH: str = "/home/kk21053/sotuken/Spot_IFU-v2.1.2-ja.pdf"
+MANUAL_EMBEDDINGS_CACHE: str = "data/manual_embeddings"
 
