@@ -3,7 +3,7 @@
 EXTERNPROTO "../protos/vendor/projects/objects/floors/protos/RectangleArena.proto"
 EXTERNPROTO "../protos/vendor/projects/robots/boston_dynamics/spot/protos/Spot.proto"
 EXTERNPROTO "../protos/custom/SandPatch.proto"
-EXTERNPROTO "../protos/vendor/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "../protos/custom/RealisticMavic2Pro.proto"
 
 DEF WORLD_INFO WorldInfo {
   basicTimeStep 16
@@ -402,7 +402,7 @@ DEF SPOT Spot {
   controller "spot_self_diagnosis"
   supervisor TRUE
 }
-DEF DRONE Mavic2Pro {
+DEF DRONE RealisticMavic2Pro {
   hidden position_0_0 1.4505818024493393e-08
   hidden position_5_0 -1.9376215916962125e-09
   hidden linearVelocity_5 0.0035616477081724966 0.15818071824375513 -1.0762386475009225

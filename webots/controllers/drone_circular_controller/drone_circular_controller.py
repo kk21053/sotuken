@@ -98,6 +98,17 @@ class DroneCircularController:
         else:
             self.spot_custom_data_field = self.spot_node.getField("customData")
         
+        # Battery simulation (Mavic 2 Pro specs)
+        # Official specs: 59.29Wh battery, 29min hover time
+        # Power consumption: 59.29Wh / (29/60)h = 122.66W hovering
+        # Energy per minute: 122.66W * (1/60)h = 2.044Wh/min
+        self.battery_capacity_wh = 59.29  # Wh
+        self.battery_current_wh = 59.29   # Start at full charge
+        self.battery_hover_power_w = 122.66  # Watts during hover
+        self.battery_move_power_w = 200.0  # Watts during movement (estimated)
+        self.battery_last_update = 0.0
+        self.battery_log_interval = 60.0  # Log every 60 seconds
+        
         # Track last processed message to avoid duplicates
         self.last_custom_data = ""
         
@@ -617,8 +628,21 @@ class DroneCircularController:
     def run(self):
         """Main control loop."""
         print("[drone] Starting observation mode")
+        print(f"[drone] Battery: {self.battery_current_wh:.2f}Wh / {self.battery_capacity_wh:.2f}Wh")
         
         while self.supervisor.step(self.time_step) != -1:
+            current_time = self.supervisor.getTime()
+            
+            # Update battery consumption
+            self.update_battery(current_time)
+            
+            # Check battery level
+            if self.battery_current_wh <= 0:
+                print("\n" + "="*80)
+                print("[drone] BATTERY DEPLETED - Landing required")
+                print("="*80)
+                break
+            
             # Process incoming triggers
             self.process_triggers()
             
@@ -627,6 +651,47 @@ class DroneCircularController:
             
             # Update position to track Spot
             self.update_position()
+    
+    def update_battery(self, current_time):
+        """Update battery consumption based on flight state."""
+        if self.battery_last_update == 0.0:
+            self.battery_last_update = current_time
+            return
+        
+        # Calculate time elapsed (in hours)
+        time_elapsed_s = current_time - self.battery_last_update
+        time_elapsed_h = time_elapsed_s / 3600.0
+        
+        # Determine power consumption based on state
+        # For simplicity, assume hovering most of the time
+        # In real scenario, you'd check velocity to determine if moving
+        velocity = self.drone_node.getVelocity()
+        speed = math.sqrt(velocity[0]**2 + velocity[1]**2 + velocity[2]**2) if velocity else 0.0
+        
+        if speed > 0.1:  # Moving
+            power_w = self.battery_move_power_w
+        else:  # Hovering
+            power_w = self.battery_hover_power_w
+        
+        # Calculate energy consumed
+        energy_consumed_wh = power_w * time_elapsed_h
+        self.battery_current_wh -= energy_consumed_wh
+        
+        # Clamp to zero
+        if self.battery_current_wh < 0:
+            self.battery_current_wh = 0.0
+        
+        # Log battery status periodically
+        if current_time - self.battery_last_update >= self.battery_log_interval:
+            battery_percent = (self.battery_current_wh / self.battery_capacity_wh) * 100.0
+            flight_time_min = current_time / 60.0
+            estimated_remaining_min = (self.battery_current_wh / power_w) * 60.0
+            
+            print(f"[drone] Battery: {battery_percent:.1f}% ({self.battery_current_wh:.2f}Wh) | "
+                  f"Flight time: {flight_time_min:.1f}min | "
+                  f"Estimated remaining: {estimated_remaining_min:.1f}min")
+        
+        self.battery_last_update = current_time
     
     def finalize_diagnosis(self):
         """Finalize pipeline and output integrated diagnosis results."""
