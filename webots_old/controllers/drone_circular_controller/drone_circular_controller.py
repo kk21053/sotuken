@@ -107,7 +107,8 @@ class DroneCircularController:
         self.battery_hover_power_w = 122.66  # Watts during hover
         self.battery_move_power_w = 200.0  # Watts during movement (estimated)
         self.battery_last_update = 0.0
-        self.battery_log_interval = 60.0  # Log every 60 seconds
+        self.battery_log_interval = 10.0  # Log every 10 seconds
+        self.battery_last_log_time = 0.0  # Track last log time
         
         # Track last processed message to avoid duplicates
         self.last_custom_data = ""
@@ -681,15 +682,17 @@ class DroneCircularController:
         if self.battery_current_wh < 0:
             self.battery_current_wh = 0.0
         
-        # Log battery status periodically
-        if current_time - self.battery_last_update >= self.battery_log_interval:
+        # Log battery status periodically (every 10 seconds)
+        if current_time - self.battery_last_log_time >= self.battery_log_interval:
             battery_percent = (self.battery_current_wh / self.battery_capacity_wh) * 100.0
             flight_time_min = current_time / 60.0
-            estimated_remaining_min = (self.battery_current_wh / power_w) * 60.0
+            estimated_remaining_min = (self.battery_current_wh / power_w) * 60.0 if power_w > 0 else 0.0
             
             print(f"[drone] Battery: {battery_percent:.1f}% ({self.battery_current_wh:.2f}Wh) | "
                   f"Flight time: {flight_time_min:.1f}min | "
                   f"Estimated remaining: {estimated_remaining_min:.1f}min")
+            
+            self.battery_last_log_time = current_time
         
         self.battery_last_update = current_time
     
