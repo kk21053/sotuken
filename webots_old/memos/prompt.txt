@@ -1,0 +1,52 @@
+# 4足歩行ロボット故障診断システム - 開発ガイドライン
+
+## 基本方針
+
+1. **仕様.txtを最優先**: 全ての実装は仕様.txtに忠実に従う
+2. **シンプルな実装**: 高専生にも理解できるシンプルな記述方法を使用
+3. **無駄な独自性を排除**: 指示されたことのみを忠実に実装
+
+## 技術スタック
+
+- シミュレーター: Webots
+- ロボット: Boston Dynamics Spot
+- ドローン: DJI Mavic 2 PRO
+- 言語: Python 3
+
+## 実装済みコンポーネント
+
+### コア機能
+- ✅ Spot自己診断 (`spot_self_diagnosis.py`)
+- ✅ ドローン観測 (`drone_circular_controller.py`)
+- ✅ 診断パイプライン (`diagnostics_pipeline/`)
+- ✅ ルールベースLLM (`llm_client.py`)
+- ✅ 環境設定スクリプト (`set_environment.py`)
+- ✅ 結果表示スクリプト (`view_result.py`)
+
+### 診断フロー
+1. Spotが各脚を4回ずつ診断
+2. ドローンがRoboPoseで姿勢を監査
+3. 両者の結果をシグモイド変換
+4. ルールベースLLMで統合判定
+5. 転倒判定
+6. 結果出力
+
+## コーディング規約
+
+1. 関数・変数名は英語で明確に
+2. コメントは日本語で詳細に
+3. 複雑なロジックは避け、段階的に実装
+4. エラーハンドリングを適切に実装
+
+## テスト方法
+
+```bash
+# 環境設定
+python set_environment.py NONE BURIED TRAPPED NONE
+
+# Webots実行
+webots worlds/sotuken_world.wbt
+
+# 結果確認
+python view_result.py
+```
