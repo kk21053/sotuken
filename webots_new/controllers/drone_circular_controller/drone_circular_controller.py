@@ -92,6 +92,7 @@ class DroneCircularController:
         self.time_step = int(self.supervisor.getBasicTimeStep())
 
         session_id = f"drone_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self.session_id = session_id
         self.pipeline = DiagnosticsPipeline(session_id)
 
         self.expected_causes = self._load_expected_causes()
@@ -115,11 +116,58 @@ class DroneCircularController:
         self.trials_completed: Dict[str, int] = {leg: 0 for leg in diag_config.LEG_IDS}
         self._finalized = False
         self._quit_time: float | None = None
+        self._quit_message_printed = False
+        self._snapshot_saved = False
+        self._snapshot_path: str | None = None
+
+        self._camera = self._init_camera()
 
         self._last_center_pos = [0.0, 0.0, 0.0]
 
         print(f"[drone_new] init session={session_id} timestep={self.time_step}ms")
         print(f"[drone_new] expected={self.expected_causes}")
+
+    def _init_camera(self):
+        # Mavic2Pro.proto の cameraSlot にはデフォルトで Camera が入っている。
+        # name 未指定のため、多くの環境では "camera" で取得できる。
+        candidate_names = ["camera", "Camera", "front camera", "camera0"]
+        for name in candidate_names:
+            try:
+                cam = self.supervisor.getDevice(name)
+                if cam is None:
+                    continue
+                try:
+                    cam.enable(self.time_step)
+                except Exception:
+                    pass
+                print(f"[drone_new] camera device found: {name}")
+                return cam
+            except Exception:
+                continue
+
+        print("[drone_new] camera device not found (snapshot will be skipped)")
+        return None
+
+    def _save_snapshot_once(self) -> str | None:
+        if self._snapshot_saved:
+            return self._snapshot_path
+        self._snapshot_saved = True
+
+        if self._camera is None:
+            return None
+
+        images_dir = Path("logs") / "images"
+        images_dir.mkdir(parents=True, exist_ok=True)
+        path = images_dir / f"{self.session_id}.png"
+        try:
+            # quality は JPEG 用だが PNG でも引数が必要。
+            self._camera.saveImage(str(path), 100)
+            self._snapshot_path = str(path)
+            print(f"[drone_new] saved snapshot: {self._snapshot_path}")
+            return self._snapshot_path
+        except Exception as exc:
+            print(f"[drone_new] warn: snapshot failed: {exc}")
+            return None
 
     def _load_expected_causes(self) -> Dict[str, str]:
         expected: Dict[str, str] = {"FL": "NONE", "FR": "NONE", "RL": "NONE", "RR": "NONE"}
@@ -312,6 +360,13 @@ class DroneCircularController:
 
             if all(self.trials_completed[l] >= diag_config.TRIAL_COUNT for l in diag_config.LEG_IDS):
                 print("[drone_new] all trials done -> finalize")
+                snap = self._save_snapshot_once()
+                if snap:
+                    try:
+                        # セッションログに載せる（VLM側が使う）
+                        self.pipeline.session.image_path = snap
+                    except Exception:
+                        pass
                 self.pipeline.finalize()
                 self._finalized = True
                 # finalize 後もしばらく動かしてから終了（バッチ実行用）
@@ -362,7 +417,9 @@ class DroneCircularController:
 
             if self._finalized and self._quit_time is not None:
                 if self.supervisor.getTime() >= self._quit_time:
-                    print("[drone_new] quit simulation")
+                    if not self._quit_message_printed:
+                        print("[drone_new] quit simulation")
+                        self._quit_message_printed = True
                     try:
                         self.supervisor.simulationQuit(0)
                     except Exception:

@@ -48,6 +48,9 @@ class LegState:
     cause_final: str = "NONE"
     p_can: float = 0.0
 
+    # VLM 予測（cause_final には反映しない。ログ比較用）
+    vlm_pred: Optional[str] = None
+
     # シナリオの期待値（正解率表示に使う）
     expected_cause: str = "NONE"
 
@@ -67,6 +70,7 @@ class LegState:
             movement_result=self.movement_result,
             cause_final=self.cause_final,
             p_can=self.p_can,
+            vlm_pred=self.vlm_pred,
             expected_cause=self.expected_cause,
             fallen=self.fallen,
             fallen_probability=self.fallen_probability,
@@ -76,6 +80,7 @@ class LegState:
 @dataclass
 class SessionState:
     session_id: str
+    image_path: Optional[str] = None
     fallen: bool = False
     fallen_probability: float = 0.0
     legs: Dict[str, LegState] = field(default_factory=dict)
@@ -96,6 +101,7 @@ class LegStatus:
     movement_result: str
     cause_final: str
     p_can: float
+    vlm_pred: Optional[str] = None
     expected_cause: str = "NONE"
     fallen: bool = False
     fallen_probability: float = 0.0
@@ -104,6 +110,7 @@ class LegStatus:
 @dataclass
 class SessionRecord:
     session_id: str
+    image_path: Optional[str]
     fallen: bool
     fallen_probability: float
     legs: Dict[str, LegStatus]
@@ -112,6 +119,7 @@ class SessionRecord:
         return {
             "timestamp": time.time(),
             "session_id": self.session_id,
+            "image_path": self.image_path,
             "fallen": self.fallen,
             "fallen_probability": self.fallen_probability,
             "legs": {
@@ -123,6 +131,7 @@ class SessionRecord:
                     "movement_result": leg.movement_result,
                     "cause_final": leg.cause_final,
                     "p_can": leg.p_can,
+                    "vlm_pred": leg.vlm_pred,
                     "expected_cause": leg.expected_cause,
                     "fallen": leg.fallen,
                     "fallen_probability": leg.fallen_probability,

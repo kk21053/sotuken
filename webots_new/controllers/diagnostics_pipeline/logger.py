@@ -34,6 +34,7 @@ class DiagnosticsLogger:
             "p_llm": leg.p_llm,
             "p_can": leg.p_can,
             "cause_final": leg.cause_final,
+            "vlm_pred": leg.vlm_pred,
             "movement_result": leg.movement_result,
             "fallen": fallen,
             "trial_ok": trial.ok,
@@ -43,6 +44,7 @@ class DiagnosticsLogger:
     def log_session(self, session: SessionState) -> None:
         record = SessionRecord(
             session_id=session.session_id,
+            image_path=session.image_path,
             fallen=session.fallen,
             fallen_probability=session.fallen_probability,
             legs={leg_id: leg.snapshot() for leg_id, leg in session.legs.items()},

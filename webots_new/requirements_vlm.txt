@@ -1,0 +1,8 @@
+# VLM (Moondream2) を使う場合の追加依存
+# 例:
+#   pip install -r requirements_vlm.txt
+
+pillow
+transformers
+# torch は環境により入れ方が異なる（CPU/GPU/Jetson）ため、まずはCPU版の例。
+# Linux CPU例: pip install torch --index-url https://download.pytorch.org/whl/cpu

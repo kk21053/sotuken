@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from . import config
 from .drone_observer import DroneObservationAggregator
 from .llm_client import LLMAnalyzer
+from .vlm_client import VLMAnalyzer
 from .logger import DiagnosticsLogger
 from .models import LegState, SessionState, TrialResult
 from .self_diagnosis import SelfDiagnosisAggregator
@@ -56,6 +57,7 @@ class DiagnosticsPipeline:
         self.self_diag = SelfDiagnosisAggregator()
         self.drone = DroneObservationAggregator()
         self.llm = LLMAnalyzer()
+        self.vlm = VLMAnalyzer()
         self.logger = DiagnosticsLogger()
         self.start_session(session_id)
 
@@ -161,5 +163,19 @@ class DiagnosticsPipeline:
     def finalize(self) -> SessionState:
         self.session.fallen = self.drone.fallen
         self.session.fallen_probability = self.drone.fallen_probability
+
+        # まずは確実にセッションログを書き出す（Webots終了時の強制終了に備える）
         self.logger.log_session(self.session)
+
+        # VLM は重い場合があるので、デフォルトでは Webots 外（後処理）で回す。
+        # どうしても Webots 内で実行したい場合のみ VLM_RUN_IN_WEBOTS=1。
+        import os
+
+        if os.getenv("VLM_ENABLE", "0").strip() == "1" and os.getenv("VLM_RUN_IN_WEBOTS", "0").strip() == "1":
+            try:
+                self.vlm.infer_session(self.session)
+                # 推論結果を追記（同じsession_idの新しい行が末尾に来る）
+                self.logger.log_session(self.session)
+            except Exception:
+                pass
         return self.session

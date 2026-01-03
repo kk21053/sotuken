@@ -1,8 +1,8 @@
 INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.py
 INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py --radius=3.5 --height=3.0 --period=25.0 --center-def=SPOT
-[drone_new] init session=drone_20260101_225435 timestep=16ms
+[drone_new] init session=drone_20260103_221235 timestep=16ms
 [drone_new] expected={'FL': 'BURIED', 'FR': 'BURIED', 'RL': 'BURIED', 'RR': 'BURIED'}
-[spot_new] init session=spot_20260101_225435 timestep=16ms
+[spot_new] init session=spot_20260103_221235 timestep=16ms
 [spot_new] env FL=BURIED FR=BURIED RL=BURIED RR=BURIED
 [spot_new] ===== FL start =====
 [spot_new] FL trial 1/6 dir=+ joint=knee env=BURIED

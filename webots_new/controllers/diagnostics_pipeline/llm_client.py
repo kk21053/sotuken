@@ -51,6 +51,23 @@ class LLMAnalyzer:
             leg.cause_final = "NONE"
             return dist
 
+        # ルール①c: Drone観測で明確に動けている（drone_canが高い）なら NONE 寄り。
+        # Spot側の自己診断が中間でも、観測上の動作が十分なら「動く」と解釈する。
+        if drone_can >= 0.78 and spot_can >= 0.40:
+            leg.movement_result = "動く"
+            leg.p_can = (spot_can + drone_can) / 2
+            dist = {
+                "NONE": 0.85,
+                "BURIED": 0.03,
+                "TRAPPED": 0.03,
+                "TANGLED": 0.03,
+                "MALFUNCTION": 0.05,
+                "FALLEN": 0.01,
+            }
+            leg.p_llm = dist
+            leg.cause_final = "NONE"
+            return dist
+
         # ルール②: 両方が低い → 動かない、原因= p_drone の最大（ただし NONE は除外）
         if spot_can <= 0.3 and drone_can <= 0.3:
             leg.movement_result = "動かない"
