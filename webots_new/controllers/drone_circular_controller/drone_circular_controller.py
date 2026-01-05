@@ -90,6 +90,8 @@ class DroneCircularController:
     def __init__(self) -> None:
         self.supervisor = Supervisor()
         self.time_step = int(self.supervisor.getBasicTimeStep())
+        self._start_time = float(self.supervisor.getTime())
+        self._max_runtime_s = float(os.getenv("DRONE_MAX_RUNTIME_S", "180"))
 
         session_id = f"drone_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self.session_id = session_id
@@ -111,12 +113,17 @@ class DroneCircularController:
 
         self.last_custom_data = ""
 
+        # 重複TRIGGER/SELF_DIAGの抑制（同一文字列が続く場合でも JOINT_ANGLES は処理したい）
+        self._seen_trigger: set[tuple[str, int, float]] = set()
+        self._seen_self_diag: set[tuple[str, int]] = set()
+
         # (leg_id, trial_index) -> active state
         self.active: Dict[Tuple[str, int], Dict] = {}
         self.trials_completed: Dict[str, int] = {leg: 0 for leg in diag_config.LEG_IDS}
         self._finalized = False
         self._quit_time: float | None = None
         self._quit_message_printed = False
+        self._quit_error_printed = False
         self._snapshot_saved = False
         self._snapshot_path: str | None = None
 
@@ -156,13 +163,16 @@ class DroneCircularController:
         if self._camera is None:
             return None
 
-        images_dir = Path("logs") / "images"
+        # 画像は controller 配下の logs/images に保存し、webots_new ルートから辿れる相対パスを記録する。
+        root_dir = HERE.parent.parent
+        images_dir = HERE / "logs" / "images"
         images_dir.mkdir(parents=True, exist_ok=True)
-        path = images_dir / f"{self.session_id}.png"
+        abs_path = images_dir / f"{self.session_id}.png"
+        rel_path = abs_path.relative_to(root_dir)
         try:
             # quality は JPEG 用だが PNG でも引数が必要。
-            self._camera.saveImage(str(path), 100)
-            self._snapshot_path = str(path)
+            self._camera.saveImage(str(abs_path), 100)
+            self._snapshot_path = str(rel_path)
             print(f"[drone_new] saved snapshot: {self._snapshot_path}")
             return self._snapshot_path
         except Exception as exc:
@@ -211,7 +221,7 @@ class DroneCircularController:
             return
 
         raw = self.spot_custom.getSFString()
-        if not raw or raw == self.last_custom_data:
+        if not raw:
             return
         self.last_custom_data = raw
 
@@ -228,6 +238,11 @@ class DroneCircularController:
                     direction = parts[3]
                     start_time = float(parts[4])
                     duration_ms = int(parts[5])
+
+                    key = (leg_id, trial_index, start_time)
+                    if key in self._seen_trigger:
+                        continue
+                    self._seen_trigger.add(key)
 
                     end_time = start_time + duration_ms / 1000.0
 
@@ -301,9 +316,20 @@ class DroneCircularController:
                     # SELF_DIAG|leg_id|trial_index|theta_samples|theta_avg|theta_final|tau_avg|tau_max|tau_nominal|safety|self_can_raw
                     leg_id = parts[1]
                     trial_index = int(parts[2])
-                    tau_nominal = float(parts[8])
-                    safety = parts[9]
+
+                    # 1試行につき1回だけ受け付ける（同一customDataが複数ステップ続いても二重計上しない）
+                    key = (leg_id, trial_index)
+                    if key in self._seen_self_diag:
+                        continue
+                    self._seen_self_diag.add(key)
+
+                    # tau / malfunction_flag は MALFUNCTION の切り分けに使う
+                    tau_avg = float(parts[6]) if len(parts) > 6 else 0.0
+                    tau_max = float(parts[7]) if len(parts) > 7 else 0.0
+                    tau_nominal = float(parts[8]) if len(parts) > 8 else 0.0
+                    safety = parts[9] if len(parts) > 9 else "UNKNOWN"
                     self_can_raw = float(parts[10]) if len(parts) > 10 else 0.35
+                    malfunction_flag = int(parts[11]) if len(parts) > 11 else 0
 
                     state = self.active.get((leg_id, trial_index))
                     if not state:
@@ -311,8 +337,11 @@ class DroneCircularController:
 
                     state["self_diag"] = {
                         "tau_nominal": tau_nominal,
+                        "tau_avg": tau_avg,
+                        "tau_max": tau_max,
                         "safety": safety,
                         "self_can_raw": self_can_raw,
+                        "malfunction_flag": malfunction_flag,
                     }
 
             except Exception as exc:
@@ -330,7 +359,14 @@ class DroneCircularController:
             if state.get("self_diag") is None and (now - state["end_time"]) < 5.0:
                 continue
 
-            self_diag = state.get("self_diag") or {"tau_nominal": 0.0, "safety": "UNKNOWN", "self_can_raw": None}
+            self_diag = state.get("self_diag") or {
+                "tau_nominal": 0.0,
+                "tau_avg": 0.0,
+                "tau_max": 0.0,
+                "safety": "UNKNOWN",
+                "self_can_raw": None,
+                "malfunction_flag": 0,
+            }
 
             self.pipeline.complete_trial(
                 leg_id=leg_id,
@@ -343,6 +379,9 @@ class DroneCircularController:
                 safety_level=str(self_diag["safety"]),
                 end_time=state["end_time"],
                 spot_can_raw=self_diag.get("self_can_raw"),
+                spot_tau_avg=float(self_diag.get("tau_avg") or 0.0),
+                spot_tau_max=float(self_diag.get("tau_max") or 0.0),
+                spot_malfunction_flag=int(self_diag.get("malfunction_flag") or 0),
             )
 
             self.trials_completed[leg_id] = self.trials_completed.get(leg_id, 0) + 1
@@ -415,6 +454,23 @@ class DroneCircularController:
             self._maybe_complete_trials()
             self.update_position()
 
+            # フェイルセーフ: 何らかの理由で試行が完了しない/quitできない場合でも終了させる
+            now = float(self.supervisor.getTime())
+            if (now - self._start_time) > self._max_runtime_s and not self._finalized:
+                print(f"[drone_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> finalize+quit")
+                snap = self._save_snapshot_once()
+                if snap:
+                    try:
+                        self.pipeline.session.image_path = snap
+                    except Exception:
+                        pass
+                try:
+                    self.pipeline.finalize()
+                except Exception:
+                    pass
+                self._finalized = True
+                self._quit_time = now + 0.5
+
             if self._finalized and self._quit_time is not None:
                 if self.supervisor.getTime() >= self._quit_time:
                     if not self._quit_message_printed:
@@ -422,8 +478,10 @@ class DroneCircularController:
                         self._quit_message_printed = True
                     try:
                         self.supervisor.simulationQuit(0)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        if not self._quit_error_printed:
+                            print(f"[drone_new] warn: simulationQuit failed: {exc}")
+                            self._quit_error_printed = True
 
 
 def main() -> None:

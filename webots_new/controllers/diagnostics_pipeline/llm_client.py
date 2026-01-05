@@ -18,6 +18,37 @@ class LLMAnalyzer:
         drone_can = leg.drone_can
         p_drone = dict(leg.p_drone)
 
+        # 直近の試行ログ（features）から、Spotのトルク比を拾う（あれば）
+        # - BURIED/TRAPPED/TANGLED: 動かないがトルクは出やすい
+        # - MALFUNCTION: 指示しても動かず、トルクも出にくい（またはほぼ0）
+        spot_tau_max_ratio = None
+        spot_malfunction_flag = None
+        try:
+            ratios = []
+            flags = []
+            for t in leg.trials:
+                if not t.features:
+                    continue
+                v = t.features.get("spot_tau_max_ratio")
+                if v is None:
+                    pass
+                else:
+                    ratios.append(float(v))
+
+                mf = t.features.get("spot_malfunction_flag")
+                if mf is None:
+                    continue
+                flags.append(int(mf))
+            if ratios:
+                ratios.sort()
+                spot_tau_max_ratio = ratios[len(ratios) // 2]  # median
+            if flags:
+                flags.sort()
+                spot_malfunction_flag = flags[len(flags) // 2]  # median
+        except Exception:
+            spot_tau_max_ratio = None
+            spot_malfunction_flag = None
+
         # ルール①: 両方が高い → 動く、原因=NONE
         if spot_can >= 0.7 and drone_can >= 0.7:
             leg.movement_result = "動く"
@@ -72,6 +103,36 @@ class LLMAnalyzer:
         if spot_can <= 0.3 and drone_can <= 0.3:
             leg.movement_result = "動かない"
             leg.p_can = (spot_can + drone_can) / 2
+
+            # Spot側が「故障モード」と明示している場合は、MALFUNCTIONを優先する
+            if spot_malfunction_flag == 1:
+                dist = {
+                    "NONE": 0.02,
+                    "BURIED": 0.02,
+                    "TRAPPED": 0.02,
+                    "TANGLED": 0.02,
+                    "MALFUNCTION": 0.89,
+                    "FALLEN": 0.01,
+                }
+                leg.p_llm = dist
+                leg.cause_final = "MALFUNCTION"
+                return dist
+
+            # トルクがほぼ出ていないなら、拘束よりも故障（指示が効かない）を優先
+            # 閾値は保守的に小さめ（0.2）にする。
+            if spot_tau_max_ratio is not None and spot_tau_max_ratio <= 0.2:
+                dist = {
+                    "NONE": 0.02,
+                    "BURIED": 0.02,
+                    "TRAPPED": 0.02,
+                    "TANGLED": 0.02,
+                    "MALFUNCTION": 0.89,
+                    "FALLEN": 0.01,
+                }
+                leg.p_llm = dist
+                leg.cause_final = "MALFUNCTION"
+                return dist
+
             max_cause = max((v, k) for k, v in p_drone.items() if k != "NONE")[1]
             dist = {
                 "NONE": 0.02,

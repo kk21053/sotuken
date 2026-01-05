@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import configparser
 import math
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -71,10 +72,28 @@ def _is_finite(x: float) -> bool:
     return not (math.isnan(x) or math.isinf(x))
 
 
+def _sanitize_sensor_rad(v: float) -> float:
+    """センサの異常値を丸める（NaN/inf/極端な値を0扱いにする）。"""
+    try:
+        fv = float(v)
+    except Exception:
+        return 0.0
+    if not _is_finite(fv):
+        return 0.0
+    # 初期化不良などで桁違いの値が出ることがあるため、汎用的に上限を設ける
+    # Spotの関節は通常 ±数rad 程度なので、それを大きく超える値は異常扱いにする
+    if abs(fv) > 3.0:  # rad（約172deg）を超えるなら異常扱い
+        return 0.0
+    return fv
+
+
 class SpotSelfDiagnosis:
     def __init__(self) -> None:
         self.robot = Supervisor()
         self.time_step = int(self.robot.getBasicTimeStep())
+        self._start_time = float(self.robot.getTime())
+        self._max_runtime_s = float(os.getenv("SPOT_MAX_RUNTIME_S", "180"))
+        self._auto_quit = os.getenv("SPOT_AUTO_QUIT", "1").strip() == "1"
 
         self.self_node = self.robot.getSelf()
         self.custom_data_field = self.self_node.getField("customData")
@@ -88,7 +107,7 @@ class SpotSelfDiagnosis:
         self._queue: List[str] = []
 
         # 起動直後はセンサ値が NaN のことがあるので、少し step して安定させる
-        for _ in range(2):
+        for _ in range(50):
             if self.robot.step(self.time_step) == -1:
                 break
 
@@ -151,31 +170,44 @@ class SpotSelfDiagnosis:
         self._send(f"TRIGGER|{leg_id}|{trial_index}|{direction}|{start_time:.6f}|{duration_ms}")
 
     def send_joint_angles(self, leg_id: str, trial_index: int) -> None:
+        motors = self.motors.get(leg_id, [])
         sensors = self.sensors.get(leg_id, [])
-        if len(sensors) < 3:
+        if len(motors) < 3 or len(sensors) < 3:
             return
 
         angles = []
         for i in range(3):
-            s = sensors[i]
-            if s:
-                v = s.getValue()
-                if not _is_finite(v):
-                    v = 0.0
-                angles.append(f"{_deg(v):.6f}")
-            else:
-                angles.append("0.0")
+            motor = motors[i] if i < len(motors) else None
+            sensor = sensors[i] if i < len(sensors) else None
+            v = self._read_joint_rad(motor, sensor)
+            angles.append(f"{_deg(v):.6f}")
         self._send(f"JOINT_ANGLES|{leg_id}|{trial_index}|" + "|".join(angles))
 
-    def _read_sensor(self, sensor, retries: int = 3) -> Optional[float]:
-        """センサ値を読み、NaN/inf の場合は少し待って再試行する。"""
-        for _ in range(max(1, retries)):
-            v = sensor.getValue()
-            if _is_finite(v):
-                return float(v)
-            if self.robot.step(self.time_step) == -1:
-                return None
-        return None
+    def _read_joint_rad(self, motor, sensor) -> float:
+        """関節角(rad)を取得する。
+
+        - PositionSensor が NaN/inf のままのことがあるため、少し待って再試行する
+        - それでもダメなら motor の target position を代替値として使う
+        """
+        # まずはセンサを優先（ここではstepしない：送信周期が崩れるため）
+        if sensor is not None:
+            try:
+                raw = float(sensor.getValue())
+            except Exception:
+                raw = None
+            if raw is not None and _is_finite(raw) and abs(raw) <= 3.0:
+                return float(raw)
+
+        # フォールバック: motor の target position（取得できる環境のみ）
+        if motor is not None:
+            try:
+                v = _sanitize_sensor_rad(motor.getTargetPosition())
+                if _is_finite(v) and abs(v) <= 3.0:
+                    return float(v)
+            except Exception:
+                pass
+
+        return 0.0
 
     def send_self_diag(
         self,
@@ -186,6 +218,7 @@ class SpotSelfDiagnosis:
         tau_nominal: float,
         safety_level: str,
         self_can_raw: float,
+        malfunction_flag: int = 0,
     ) -> None:
         theta_n = len(theta_meas)
         theta_avg = (sum(theta_meas) / theta_n) if theta_n else 0.0
@@ -198,19 +231,17 @@ class SpotSelfDiagnosis:
         msg = (
             f"SELF_DIAG|{leg_id}|{trial_index}|{theta_n}|"
             f"{theta_avg:.6f}|{theta_final:.6f}|{tau_avg:.6f}|{tau_max:.6f}|"
-            f"{tau_nominal:.6f}|{safety_level}|{self_can_raw:.6f}"
+            f"{tau_nominal:.6f}|{safety_level}|{self_can_raw:.6f}|{int(malfunction_flag)}"
         )
         self._send(msg)
 
     # ---- trial execution ----
 
     def _safe_angle(self, motor, sensor) -> Tuple[float, float]:
-        if not motor or not sensor:
+        if motor is None or sensor is None:
             return 0.0, 0.0
 
-        current = self._read_sensor(sensor)
-        if current is None:
-            return 0.0, 0.0
+        current = self._read_joint_rad(motor, sensor)
 
         current_deg = _deg(current)
 
@@ -223,7 +254,7 @@ class SpotSelfDiagnosis:
 
         min_deg = _deg(min_pos)
         max_deg = _deg(max_pos)
-        margin = 5.0
+        margin = 1.0
 
         safe_pos = max(0.0, min(30.0, (max_deg - current_deg - margin)))
         safe_neg = max(0.0, min(30.0, (current_deg - min_deg - margin)))
@@ -264,6 +295,16 @@ class SpotSelfDiagnosis:
         for leg_id in diag_config.LEG_IDS:
             print(f"[spot_new] ===== {leg_id} start =====")
             for trial_index in range(1, diag_config.TRIAL_COUNT + 1):
+                # フェイルセーフ: 何らかの理由で無限ループ/停止した場合は強制終了
+                now = float(self.robot.getTime())
+                if (now - self._start_time) > self._max_runtime_s:
+                    print(f"[spot_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> quit")
+                    try:
+                        self.robot.simulationQuit(1)
+                    except Exception:
+                        pass
+                    return
+
                 direction = diag_config.TRIAL_PATTERN[trial_index - 1]
                 motor_index = diag_config.TRIAL_MOTOR_INDICES[trial_index - 1]
 
@@ -276,18 +317,24 @@ class SpotSelfDiagnosis:
                 motor = motors[motor_index]
                 sensor = sensors[motor_index] if len(sensors) > motor_index else None
 
+                if sensor is None:
+                    try:
+                        motor_name = LEG_MOTOR_NAMES.get(leg_id, [])[motor_index]
+                        sensor_name = motor_name.replace("motor", "sensor")
+                    except Exception:
+                        motor_name = ""
+                        sensor_name = ""
+                    print(f"[spot_new] warn: sensor missing {leg_id} idx={motor_index} motor='{motor_name}' sensor='{sensor_name}'")
+
                 safe_pos, safe_neg = self._safe_angle(motor, sensor)
                 requested = diag_config.TRIAL_ANGLE_DEG
 
                 if direction == "+":
-                    if safe_pos < 0.5:
-                        continue
-                    angle = min(requested, safe_pos)
+                    # 角度が小さくても試行自体は実行してデータを送る（セッション未出力を防ぐ）
+                    angle = min(requested, max(0.0, safe_pos))
                     sign = 1.0
                 else:
-                    if safe_neg < 0.5:
-                        continue
-                    angle = min(requested, safe_neg)
+                    angle = min(requested, max(0.0, safe_neg))
                     sign = -1.0
 
                 env = self._leg_env(leg_id)
@@ -303,6 +350,10 @@ class SpotSelfDiagnosis:
                 if env == "BURIED":
                     angle_rad *= 0.05
                     vel_scale = 0.05
+                # MALFUNCTION は「指示を出しても関節が動かない」状態を再現する。
+                # 実装上は「指示（意図）は出すが、アクチュエータが無視して動かない」を再現する。
+                elif env == "MALFUNCTION":
+                    vel_scale = 0.2
                 # TANGLED は接触が激しくなりやすいので、NaN/転倒を避けるため適度にマイルドにする
                 elif env == "TANGLED":
                     angle_rad *= 0.85
@@ -320,15 +371,15 @@ class SpotSelfDiagnosis:
                 tau_meas: List[float] = []
 
                 # command
-                if sensor:
-                    initial = self._read_sensor(sensor)
-                    if initial is None:
-                        # センサが不安定なら、この試行はスキップ
-                        continue
-                    target = initial + angle_rad
+                if sensor is not None:
+                    initial = self._read_joint_rad(motor, sensor)
+                    desired_target = initial + angle_rad
+                    # MALFUNCTION: 意図したtargetは記録するが、実際のmotor指令は初期角度のままにする
+                    target = initial if env == "MALFUNCTION" else desired_target
                 else:
                     initial = 0.0
-                    target = angle_rad
+                    desired_target = angle_rad
+                    target = 0.0 if env == "MALFUNCTION" else desired_target
 
                 if not _is_finite(target):
                     # 念のため NaN/inf を弾く
@@ -351,18 +402,16 @@ class SpotSelfDiagnosis:
                     # observation frame to drone
                     self.send_joint_angles(leg_id, trial_index)
 
-                    if not sensor:
+                    if sensor is None:
                         continue
 
                     v = sensor.getValue()
-                    if not _is_finite(v):
-                        # NaN のときは 0 扱い（ログ/スコアが壊れないように）
-                        v = 0.0
+                    v = _sanitize_sensor_rad(v)
                     theta = _deg(v)
                     theta_meas.append(theta)
 
                     # commanded angle (deg) for tracking: target position (deg)
-                    theta_cmd.append(_deg(target))
+                    theta_cmd.append(_deg(desired_target))
 
                     if prev_theta is None:
                         omega_meas.append(0.0)
@@ -383,14 +432,46 @@ class SpotSelfDiagnosis:
                 # reset
                 try:
                     motor.setPosition(0.0)
-                    motor.setVelocity(motor.getMaxVelocity() * 0.15)
+                    # MALFUNCTION のときも確実に止める
+                    reset_vel = 0.0 if env == "MALFUNCTION" else (motor.getMaxVelocity() * 0.15)
+                    motor.setVelocity(reset_vel)
                 except Exception:
                     pass
 
                 tau_limit = self._calculate_tau_limit()
                 self_can_raw = self._score_self_can_raw(theta_cmd, theta_meas, omega_meas, tau_meas, tau_limit)
-                self.send_self_diag(leg_id, trial_index, theta_meas, tau_meas, tau_limit, "NORMAL", self_can_raw)
+                if env == "MALFUNCTION":
+                    # 「指示しても動かない」ので、自己診断は低くする
+                    self_can_raw = 0.0
+                self.send_self_diag(
+                    leg_id,
+                    trial_index,
+                    theta_meas,
+                    tau_meas,
+                    tau_limit,
+                    "NORMAL",
+                    self_can_raw,
+                    malfunction_flag=1 if env == "MALFUNCTION" else 0,
+                )
                 print(f"[spot_new] {leg_id} trial {trial_index}/{diag_config.TRIAL_COUNT} done self_can_raw={self_can_raw:.3f}")
+
+                # MALFUNCTION の確認用ログ（指示Δと実測Δ）
+                if env == "MALFUNCTION":
+                    try:
+                        cmd_delta_deg = float(angle * sign)
+                    except Exception:
+                        cmd_delta_deg = 0.0
+                    if theta_meas:
+                        actual_delta_deg = float(theta_meas[-1] - theta_meas[0])
+                        print(
+                            f"[spot_new] MALFUNCTION_CHECK leg={leg_id} trial={trial_index} joint={joint_name} "
+                            f"cmd_delta_deg={cmd_delta_deg:.3f} actual_delta_deg={actual_delta_deg:.3f}"
+                        )
+                    else:
+                        print(
+                            f"[spot_new] MALFUNCTION_CHECK leg={leg_id} trial={trial_index} joint={joint_name} "
+                            f"cmd_delta_deg={cmd_delta_deg:.3f} actual_delta_deg=NaN (no sensor samples)"
+                        )
 
                 # 重要: customData は同一ステップ内の最後の setSFString が勝つ。
                 # ここで step せず次の TRIGGER を送ると SELF_DIAG が上書きされ、
@@ -404,6 +485,19 @@ class SpotSelfDiagnosis:
                 return
 
         print("[spot_new] diagnosis complete")
+
+        # Drone側が落ちた/quitできないと Webots が開きっぱなしになることがあるので、
+        # Spot側でもフェイルセーフとして終了する（必要なら SPOT_AUTO_QUIT=0 で無効化）。
+        if self._auto_quit:
+            # drone finalize の猶予
+            for _ in range(int(5.0 / max(0.001, self.time_step / 1000.0))):
+                if self.robot.step(self.time_step) == -1:
+                    return
+            print("[spot_new] auto quit (failsafe)")
+            try:
+                self.robot.simulationQuit(0)
+            except Exception:
+                pass
 
 
 def main() -> None:

@@ -434,7 +434,7 @@ DEF BURIED_BOX_RL Group {
 DEF BURIED_BOX_RR Group {
   children [
     DEF BURIED_BOTTOM_RR Solid {
-      translation -0.35 -0.17 0.0
+      translation -0.36 -0.18 0.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -454,7 +454,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_TOP_RR Solid {
-      translation -0.35 -0.17 0.12
+      translation -0.36 -0.18 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -474,7 +474,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_LEFT_RR Solid {
-      translation -0.43999999999999995 -0.17 0.08
+      translation -0.43 -0.18 0.05
       children [
         Shape {
           appearance PBRAppearance {
@@ -494,7 +494,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_RIGHT_RR Solid {
-      translation -0.26 -0.17 0.08
+      translation -0.29 -0.18 0.05
       children [
         Shape {
           appearance PBRAppearance {
@@ -514,7 +514,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_FRONT_RR Solid {
-      translation -0.35 -0.08000000000000002 0.08
+      translation -0.36 -0.10999999999999999 0.05
       children [
         Shape {
           appearance PBRAppearance {
@@ -534,7 +534,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_BACK_RR Solid {
-      translation -0.35 -0.26 0.08
+      translation -0.36 -0.25 0.05
       children [
         Shape {
           appearance PBRAppearance {
@@ -710,7 +710,7 @@ DEF FOOT_TRAP_FL Solid {
   locked TRUE
 }
 DEF FOOT_TRAP_FR Solid {
-  translation 0.0 0.0 -100.0
+  translation 0.36 -0.18 0.0
   children [
     Group {
       children [
@@ -1172,7 +1172,7 @@ DEF FOOT_TRAP_RR Solid {
   locked TRUE
 }
 DEF FOOT_VINE_FL Solid {
-  translation 0.0 0.0 -100.0
+  translation 0.44 0.2 0.08
   children [
     # rope-like tangle: thin loop segments + a tail
     Pose {
@@ -2826,6 +2826,12 @@ DEF DRONE Mavic2Pro {
   hidden angularVelocity_7 -2.789242690274019 0.09731895187457404 0.006197898586825219
   translation -0.004152019501481337 -4.577414969620485 3.1191845947089347
   rotation -0.02152358125191462 0.023079832745024564 0.9995019043356316 1.5713937105736038
+  cameraSlot [
+    Camera {
+      width 400
+      height 240
+    }
+  ]
   controller "drone_circular_controller"
   controllerArgs [
     "--radius=3.5"
