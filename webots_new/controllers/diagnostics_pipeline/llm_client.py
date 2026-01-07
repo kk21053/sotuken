@@ -365,8 +365,6 @@ class LLMAnalyzer:
             "次のラベル集合の確率分布を推定してください。\n"
             f"ラベル: {list(_LABELS)}\n"
             "出力は JSONオブジェクトのみ（説明文やコードブロック禁止）。\n"
-            "出力JSONは次のキーをすべて含めてください（順序は不問）。\n"
-            "期待スキーマ例: {\"NONE\":0.1,\"BURIED\":0.2,\"TRAPPED\":0.1,\"TANGLED\":0.1,\"MALFUNCTION\":0.4,\"FALLEN\":0.1}\n"
             "各ラベルの値は0..1の実数、合計は1.0に正規化してください。\n\n"
             "判断の基本方針（重要）:\n"
             "- fallen=true の場合でも、脚の原因（BURIED/TRAPPED/TANGLED/MALFUNCTION）推定を優先し、FALLENは大きくしすぎない\n"
@@ -392,8 +390,6 @@ class LLMAnalyzer:
                     ],
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    # JSON出力強制（後処理の分岐追加を避けるため、生成制約で安定化する）
-                    response_format={"type": "json_object"},
                 )
                 text = out["choices"][0]["message"]["content"]
             else:
