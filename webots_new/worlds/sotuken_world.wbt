@@ -62,7 +62,7 @@ RectangleArena {
 DEF BURIED_BOX_FL Group {
   children [
     DEF BURIED_BOTTOM_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 0.17 0.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -82,7 +82,7 @@ DEF BURIED_BOX_FL Group {
       locked TRUE
     }
     DEF BURIED_TOP_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 0.17 0.12
       children [
         Shape {
           appearance PBRAppearance {
@@ -102,7 +102,7 @@ DEF BURIED_BOX_FL Group {
       locked TRUE
     }
     DEF BURIED_LEFT_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.36 0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -122,7 +122,7 @@ DEF BURIED_BOX_FL Group {
       locked TRUE
     }
     DEF BURIED_RIGHT_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.54 0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -142,7 +142,7 @@ DEF BURIED_BOX_FL Group {
       locked TRUE
     }
     DEF BURIED_FRONT_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 0.26 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -162,7 +162,7 @@ DEF BURIED_BOX_FL Group {
       locked TRUE
     }
     DEF BURIED_BACK_FL Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 0.08000000000000002 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -186,7 +186,7 @@ DEF BURIED_BOX_FL Group {
 DEF BURIED_BOX_FR Group {
   children [
     DEF BURIED_BOTTOM_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 -0.17 0.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -206,7 +206,7 @@ DEF BURIED_BOX_FR Group {
       locked TRUE
     }
     DEF BURIED_TOP_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 -0.17 0.12
       children [
         Shape {
           appearance PBRAppearance {
@@ -226,7 +226,7 @@ DEF BURIED_BOX_FR Group {
       locked TRUE
     }
     DEF BURIED_LEFT_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.36 -0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -246,7 +246,7 @@ DEF BURIED_BOX_FR Group {
       locked TRUE
     }
     DEF BURIED_RIGHT_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.54 -0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -266,7 +266,7 @@ DEF BURIED_BOX_FR Group {
       locked TRUE
     }
     DEF BURIED_FRONT_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 -0.08000000000000002 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -286,7 +286,7 @@ DEF BURIED_BOX_FR Group {
       locked TRUE
     }
     DEF BURIED_BACK_FR Solid {
-      translation 0.0 0.0 -100.0
+      translation 0.45 -0.26 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -310,7 +310,7 @@ DEF BURIED_BOX_FR Group {
 DEF BURIED_BOX_RL Group {
   children [
     DEF BURIED_BOTTOM_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 0.17 0.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -330,7 +330,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_TOP_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 0.17 0.12
       children [
         Shape {
           appearance PBRAppearance {
@@ -350,7 +350,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_LEFT_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.35 0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -370,7 +370,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_RIGHT_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.17 0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -390,7 +390,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_FRONT_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 0.26 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -410,7 +410,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_BACK_RL Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 0.08000000000000002 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -434,7 +434,7 @@ DEF BURIED_BOX_RL Group {
 DEF BURIED_BOX_RR Group {
   children [
     DEF BURIED_BOTTOM_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 -0.17 0.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -454,7 +454,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_TOP_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 -0.17 0.12
       children [
         Shape {
           appearance PBRAppearance {
@@ -474,7 +474,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_LEFT_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.35 -0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -494,7 +494,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_RIGHT_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.17 -0.17 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -514,7 +514,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_FRONT_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 -0.08000000000000002 0.08
       children [
         Shape {
           appearance PBRAppearance {
@@ -534,7 +534,7 @@ DEF BURIED_BOX_RR Group {
       locked TRUE
     }
     DEF BURIED_BACK_RR Solid {
-      translation 0.0 0.0 -100.0
+      translation -0.26 -0.26 0.08
       children [
         Shape {
           appearance PBRAppearance {

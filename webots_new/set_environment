@@ -1,0 +1,299 @@
+#!/usr/bin/env python3
+"""
+完全環境設定スクリプト（拡張子なしの実行ファイル形式）
+
+使い方:
+    ./set_environment NONE BURIED TRAPPED NONE
+    
+    または対話モード:
+    ./set_environment
+
+引数の順序: FL FR RL RR
+設定可能な環境: NONE, BURIED, TRAPPED, TANGLED, MALFUNCTION
+
+このスクリプトは以下を変更します:
+1. config/scenario.ini - 環境設定
+2. worlds/sotuken_world.wbt - ワールドファイルのオブジェクト位置
+"""
+
+import sys
+import configparser
+import re
+import shutil
+from pathlib import Path
+from datetime import datetime
+
+# 設定ファイルのパス（自身のディレクトリ基準）
+CONFIG_PATH = Path(__file__).parent / "config" / "scenario.ini"
+WORLD_FILE = Path(__file__).parent / "worlds" / "sotuken_world.wbt"
+
+# 有効な環境タイプ
+VALID_ENVIRONMENTS = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION"]
+
+# 略語対応（入力のみ。表示はフルスペルのまま）
+ABBREV_MAP = {
+    "NONE": "NONE",
+    "BUR": "BURIED",
+    "TRA": "TRAPPED",
+    "TAN": "TANGLED",
+    "MAL": "MALFUNCTION",
+}
+
+# 脚のID
+LEG_IDS = ["FL", "FR", "RL", "RR"]
+
+# 脚名の変換マップ
+LEG_NAMES = {
+    "FL": "front_left",
+    "FR": "front_right",
+    "RL": "rear_left",
+    "RR": "rear_right"
+}
+
+
+def validate_environment(env):
+    """環境タイプの検証（略語も可）"""
+    env = env.strip().upper()
+    env = ABBREV_MAP.get(env, env)
+    if env not in VALID_ENVIRONMENTS:
+        print(f"エラー: '{env}' は無効な環境です。")
+        print(f"有効な環境: {', '.join(VALID_ENVIRONMENTS)}")
+        return None
+    return env
+
+
+def update_world_file(environments):
+    """ワールドファイルのオブジェクト位置を更新（脚ごとに反映）
+
+    - NONE: その脚の BURIED/TRAP/VINE を全て非表示（z=-100）
+    - BURIED: その脚の BURIED_*_* ノード群を表示座標へ、他は非表示
+    - TRAPPED: その脚の FOOT_TRAP_* を表示座標へ、他は非表示
+    - TANGLED: その脚の FOOT_VINE_* を表示座標へ、他は非表示
+    - MALFUNCTION: 物体配置なし（全て非表示）
+    """
+    if not WORLD_FILE.exists():
+        print(f"警告: ワールドファイルが見つかりません: {WORLD_FILE}")
+        return False
+    
+    # バックアップを作成
+    backup_file = WORLD_FILE.parent / f"{WORLD_FILE.stem}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wbt"
+    shutil.copy2(WORLD_FILE, backup_file)
+    print(f"バックアップ作成: {backup_file.name}")
+    
+    # ワールドファイルを読み込み
+    content = WORLD_FILE.read_text()
+
+    # 脚ごとの基準座標（SPOTの原点周りの想定座標）
+    base_xy = {
+        "FL": (0.45, 0.17),
+        "FR": (0.45, -0.17),
+        "RL": (-0.45, 0.17),
+        "RR": (-0.45, -0.17),
+    }
+
+    def set_translation(def_name: str, x: float, y: float, z: float) -> None:
+        nonlocal content
+        pattern = rf'(DEF {re.escape(def_name)}\s+(?:Solid|Group) \{{\s*translation\s+)[-\d.]+\s+[-\d.]+\s+[-\d.]+'
+        replacement = rf'\g<1>{x} {y} {z}'
+        content_new = re.sub(pattern, replacement, content, count=1)
+        content = content_new
+
+    def hide_translation(def_name: str) -> None:
+        set_translation(def_name, 0.0, 0.0, -100.0)
+
+    # TANGLED(FOOT_VINE) の基準座標（要望に基づく固定値）
+    vine_xy = {
+        "FL": (0.41, 0.17),
+        "FR": (0.40, -0.15),
+        "RL": (-0.26, 0.16),
+        "RR": (-0.27, -0.17),
+    }
+
+    # BURIED(埋没箱) のx位置オーバーライド（RL/RRのみ要望値）
+    buried_center_xy = {
+        "FL": base_xy["FL"],
+        "FR": base_xy["FR"],
+        "RL": (-0.26, base_xy["RL"][1]),
+        "RR": (-0.26, base_xy["RR"][1]),
+    }
+
+    # TRAPPED(FOOT_TRAP) のx位置オーバーライド（要望に基づく固定）
+    trap_xy = {
+        "RL": (-0.26, base_xy["RL"][1]),
+        "RR": (-0.26, base_xy["RR"][1]),
+    }
+
+    for leg_id, env in zip(LEG_IDS, environments):
+        x0, y0 = base_xy[leg_id]
+
+        # まず全タイプを非表示にしてから、対象のみ表示にする
+        # BURIED: 子要素6つ
+        for part in ("BOTTOM", "TOP", "LEFT", "RIGHT", "FRONT", "BACK"):
+            hide_translation(f"BURIED_{part}_{leg_id}")
+        # TRAP/VINE: 単体
+        hide_translation(f"FOOT_TRAP_{leg_id}")
+        hide_translation(f"FOOT_VINE_{leg_id}")
+
+        if env == "BURIED":
+            # ボックス構成要素の座標を個別に設定（RL/RRはx=-0.26に基準を上書き）
+            bx, by = buried_center_xy.get(leg_id, (x0, y0))
+            set_translation(f"BURIED_BOTTOM_{leg_id}", bx, by, 0.0)
+            set_translation(f"BURIED_TOP_{leg_id}", bx, by, 0.12)
+            set_translation(f"BURIED_LEFT_{leg_id}", bx - 0.09, by, 0.08)
+            set_translation(f"BURIED_RIGHT_{leg_id}", bx + 0.09, by, 0.08)
+            set_translation(f"BURIED_FRONT_{leg_id}", bx, by + 0.09, 0.08)
+            set_translation(f"BURIED_BACK_{leg_id}", bx, by - 0.09, 0.08)
+        elif env == "TRAPPED":
+            tx, ty = trap_xy.get(leg_id, (x0, y0))
+            set_translation(f"FOOT_TRAP_{leg_id}", tx, ty, 0.0)
+        elif env == "TANGLED":
+            vx, vy = vine_xy.get(leg_id, (x0, y0))
+            set_translation(f"FOOT_VINE_{leg_id}", vx, vy, 0.05)
+        # MALFUNCTION/NONE は配置しない（非表示のまま）
+
+    # ワールドファイルに書き込み
+    WORLD_FILE.write_text(content)
+    print(f"ワールドファイル更新: {WORLD_FILE}")
+    
+    return True
+
+
+def update_scenario_config(environments):
+    """scenario.iniを更新"""
+    # 設定ファイルを読み込み（物理パラメータのみ保持）
+    old_config = configparser.ConfigParser()
+    if CONFIG_PATH.exists():
+        old_config.read(CONFIG_PATH)
+    
+    # 新しい設定を作成
+    config = configparser.ConfigParser()
+    config['DEFAULT'] = {}
+    
+    # 物理パラメータを引き継ぐ（DEFAULTセクションのみ）
+    if 'DEFAULT' in old_config:
+        for key in ['toplevel', 'friction', 'bounce', 'material',
+                    'sand.radius', 'sand.height', 'sand.color',
+                    'trap.offsetx', 'trap.offsety', 'trap.offsetz', 'trap.friction', 'trap.bounce', 'trap.material',
+                    'vine.offsetx', 'vine.offsety', 'vine.offsetz', 'vine.rotation', 'vine.friction', 'vine.bounce', 'vine.material']:
+            if key in old_config['DEFAULT']:
+                config['DEFAULT'][key] = old_config['DEFAULT'][key]
+    
+    # デフォルト値を設定（存在しない場合）
+    config['DEFAULT'].setdefault('scenario', 'none')
+    config['DEFAULT'].setdefault('toplevel', '0.10')
+    config['DEFAULT'].setdefault('friction', '1000.0')
+    config['DEFAULT'].setdefault('bounce', '0.0')
+    config['DEFAULT'].setdefault('material', 'sand')
+    
+    # 各脚の環境を設定
+    active_scenario = 'none'
+    active_foot = None
+    
+    for leg_id, env in zip(LEG_IDS, environments):
+        leg_name = LEG_NAMES[leg_id]
+        config['DEFAULT'][f'{leg_id}_environment'] = env
+        
+        # 最初に見つかった環境をシナリオとして設定（後方互換性）
+        if active_scenario == 'none':
+            if env == "BURIED":
+                active_scenario = 'sand_burial'
+                active_foot = leg_name
+                config['DEFAULT']['buriedFoot'] = leg_name
+            elif env == "TRAPPED":
+                active_scenario = 'foot_trap'
+                active_foot = leg_name
+                config['DEFAULT']['trappedFoot'] = leg_name
+            elif env == "TANGLED":
+                active_scenario = 'foot_vine'
+                active_foot = leg_name
+                config['DEFAULT']['tangledFoot'] = leg_name
+    
+    config['DEFAULT']['scenario'] = active_scenario
+    
+    # 設定を保存
+    with CONFIG_PATH.open('w') as f:
+        config.write(f)
+    
+    print(f"\n環境設定を更新しました: {CONFIG_PATH}")
+    print("=" * 60)
+    for leg_id, env in zip(LEG_IDS, environments):
+        print(f"  {leg_id} ({LEG_NAMES[leg_id]:12s}): {env}")
+    print("=" * 60)
+
+
+def interactive_mode():
+    """対話モード"""
+    print("=" * 60)
+    print("環境設定スクリプト - 対話モード")
+    print("=" * 60)
+    print(f"有効な環境: {', '.join(VALID_ENVIRONMENTS)}")
+    print()
+    
+    environments = []
+    for leg_id in LEG_IDS:
+        while True:
+            env = input(f"{leg_id} ({LEG_NAMES[leg_id]}) の環境を入力 (デフォルト: NONE): ").strip()
+            if not env:
+                env = "NONE"
+            env = validate_environment(env)
+            if env is not None:
+                environments.append(env)
+                break
+    
+    return environments
+
+
+def main():
+    """メイン処理"""
+    print()
+    
+    # コマンドライン引数をチェック
+    if len(sys.argv) == 1:
+        # 対話モード
+        environments = interactive_mode()
+    elif len(sys.argv) == 5:
+        # コマンドライン引数から取得
+        environments = []
+        for arg in sys.argv[1:]:
+            env = validate_environment(arg)
+            if env is None:
+                sys.exit(1)
+            environments.append(env)
+    else:
+        print("使い方:")
+        print("  対話モード:         ./set_environment")
+        print("  コマンドライン:     ./set_environment FL FR RL RR")
+        print()
+        print("例:")
+        print("  ./set_environment NONE BURIED TRAPPED NONE")
+        print()
+        print(f"有効な環境: {', '.join(VALID_ENVIRONMENTS)}")
+        print(f"脚の順序: {' '.join(LEG_IDS)}")
+        sys.exit(1)
+    
+    # 設定を更新
+    print("\n" + "=" * 70)
+    print("環境設定の適用")
+    print("=" * 70)
+    
+    # 1. scenario.ini を更新
+    print("\n[1/2] scenario.ini を更新中...")
+    update_scenario_config(environments)
+    
+    # 2. ワールドファイルを更新
+    print("\n[2/2] ワールドファイルを更新中...")
+    if update_world_file(environments):
+        print("\n" + "=" * 70)
+        print("✅ 環境設定が完了しました")
+        print("=" * 70)
+        print("\n⚠️  Webotsが起動中の場合:")
+        print("   1. Webotsを完全に終了してください (Ctrl+C または pkill)")
+        print("   2. 再度Webotsを起動してください")
+        print("\n   これにより、新しい環境設定が確実に反映されます。\n")
+    else:
+        print("\n⚠️  ワールドファイルの更新に失敗しました")
+        print("   scenario.ini のみが更新されています\n")
+
+
+if __name__ == "__main__":
+    main()

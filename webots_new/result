@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+# 直近セッションの結果をシンプル表示（run_webots 実行直後のセッションを想定）
+# 表示項目（値毎に改行）:
+# - p_rule
+# - p_llm
+# - cause_final
+# - 精度（expected と final の一致数 /4）
+# 使い方:
+#   ./result                 # 直近1セッションを表示
+#   ./result --session <id>  # 指定セッションを表示
+
+import json
+import statistics
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent
+SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
+
+LEG_IDS = ["FL", "FR", "RL", "RR"]
+
+ANSI_BOLD_BLUE = "\033[1;34m"
+ANSI_BOLD_GREEN = "\033[1;32m"
+ANSI_BOLD_RED = "\033[1;31m"
+ANSI_RESET = "\033[0m"
+
+
+# JSONL 読み込み（全行）
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    items: list[dict] = []
+    try:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                items.append(json.loads(line))
+            except Exception:
+                pass
+    except Exception:
+        return []
+    return items
+
+
+def _select_session(items: list[dict], sid_opt: str | None) -> dict | None:
+    if not items:
+        return None
+    if sid_opt:
+        for s in reversed(items):
+            if str(s.get("session_id", "")) == sid_opt:
+                return s
+        return None
+    return items[-1]
+
+
+def _median(values: list[float]) -> float:
+    values = [float(v) for v in values if v is not None]
+    if not values:
+        return 0.0
+    try:
+        return float(statistics.median(values))
+    except Exception:
+        return float(values[len(values) // 2])
+
+
+def _top_key(dist: dict | None) -> str | None:
+    if not dist:
+        return None
+    try:
+        k, _ = max(((str(k), float(v)) for k, v in dist.items()), key=lambda kv: kv[1])
+        return k
+    except Exception:
+        return None
+
+
+def _fmt_dist(dist: dict | None, colorize: bool = False) -> str:
+    if not dist:
+        return "{}"
+    try:
+        # ラベル順は固定のほうが見やすい（LEG_IDSとは別のCAUSEラベル順）
+        keys = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN"]
+        top = _top_key(dist) if colorize else None
+        parts = []
+        for k in keys:
+            if k in dist:
+                val = float(dist[k])
+                text = f"{k}:{val:.3f}"
+                if colorize and top == k:
+                    text = f"{ANSI_BOLD_BLUE}{text}{ANSI_RESET}"
+                parts.append(text)
+        # 未指定キーも拾う
+        for k, v in dist.items():
+            if k not in keys:
+                val = float(v)
+                text = f"{k}:{val:.3f}"
+                if colorize and top == k:
+                    text = f"{ANSI_BOLD_BLUE}{text}{ANSI_RESET}"
+                parts.append(text)
+        return "{" + ", ".join(parts) + "}"
+    except Exception:
+        return str(dist)
+
+
+def main() -> None:
+    sessions = _read_jsonl(SESSIONS)
+    if not sessions:
+        print("結果が見つかりませんでした:", SESSIONS)
+        return
+
+    sid_opt = None
+    args = sys.argv[1:]
+    if "--session" in args:
+        try:
+            i = args.index("--session")
+            sid_opt = args[i + 1] if i + 1 < len(args) else None
+        except Exception:
+            sid_opt = None
+
+    s = _select_session(sessions, sid_opt)
+    if not s:
+        print("指定セッションが見つかりません")
+        return
+
+    sid = str(s.get("session_id", ""))
+    legs = s.get("legs", {}) or {}
+
+    # 精度（final と expected の一致数）
+    correct = 0
+    total = 0
+    for leg in LEG_IDS:
+        entry = legs.get(leg, {}) or {}
+        exp = str(entry.get("expected_cause", "NONE"))
+        got = str(entry.get("cause_final", ""))
+        total += 1
+        if exp == got:
+            correct += 1
+
+    print(f"Session: {sid}")
+    for leg in LEG_IDS:
+        entry = legs.get(leg, {}) or {}
+        cause_rule = str(entry.get("cause_rule", ""))
+        p_rule = entry.get("p_rule", {}) or {}
+        p_llm = entry.get("p_llm", {}) or {}
+        final = str(entry.get("cause_final", ""))
+        exp = str(entry.get("expected_cause", "NONE"))
+        # 値毎に一つずつ改行
+        print(f"\n{leg}")
+        print(f"p_rule: {_fmt_dist(p_rule, colorize=True)}")
+        print(f"p_llm:  {_fmt_dist(p_llm, colorize=True)}")
+        if final == exp:
+            final_text = f"{ANSI_BOLD_GREEN}{final}{ANSI_RESET}"
+        else:
+            final_text = f"{ANSI_BOLD_RED}{final}{ANSI_RESET}"
+        print(f"cause_final: {final_text}")
+        print(f"expected: {exp}")
+
+    print(f"\nAccuracy: {correct}/{total}")
+
+
+if __name__ == "__main__":
+    main()

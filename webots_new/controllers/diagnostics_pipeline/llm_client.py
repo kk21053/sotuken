@@ -519,12 +519,12 @@ class LLMAnalyzer:
             spot_tau_max_ratio = None
             spot_malfunction_flag = None
 
-        # ルール①: 両方が高い → 動く、原因=NONE
-        if spot_can >= 0.7 and drone_can >= 0.7:
+        # ルール①: 両方が非常に高い → 動く、原因=NONE（閾値を引き上げて範囲を狭める）
+        if spot_can >= 0.80 and drone_can >= 0.80:
             leg.movement_result = "動く"
             leg.p_can = (spot_can + drone_can) / 2
             dist = {
-                "NONE": 0.94,
+                "NONE": 0.90,
                 "BURIED": 0.01,
                 "TRAPPED": 0.01,
                 "TANGLED": 0.01,
@@ -537,11 +537,12 @@ class LLMAnalyzer:
 
         # ルール①b: "動く" の一般則（片方が少し低くても、全体として高ければNONE）
         # ※特定の誤分類パターン回避ではなく、can=動作確率という定義に沿った汎用ルール。
-        if spot_can >= 0.55 and drone_can >= 0.7:
+        # 閾値を引き上げて NONE への寄せを抑制
+        if spot_can >= 0.65 and drone_can >= 0.80:
             leg.movement_result = "動く"
             leg.p_can = (spot_can + drone_can) / 2
             dist = {
-                "NONE": 0.85,
+                "NONE": 0.80,
                 "BURIED": 0.03,
                 "TRAPPED": 0.03,
                 "TANGLED": 0.03,
@@ -554,11 +555,12 @@ class LLMAnalyzer:
 
         # ルール①c: Drone観測で明確に動けている（drone_canが高い）なら NONE 寄り。
         # Spot側の自己診断が中間でも、観測上の動作が十分なら「動く」と解釈する。
-        if drone_can >= 0.78 and spot_can >= 0.40:
+        # 閾値を引き上げて NONE の適用範囲を縮小
+        if drone_can >= 0.85 and spot_can >= 0.50:
             leg.movement_result = "動く"
             leg.p_can = (spot_can + drone_can) / 2
             dist = {
-                "NONE": 0.85,
+                "NONE": 0.80,
                 "BURIED": 0.03,
                 "TRAPPED": 0.03,
                 "TANGLED": 0.03,
