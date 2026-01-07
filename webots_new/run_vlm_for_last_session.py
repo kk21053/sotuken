@@ -15,10 +15,21 @@ import argparse
 import json
 import os
 from pathlib import Path
+import sys
 
 
 ROOT = Path(__file__).resolve().parent
 SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
+
+
+def _ensure_local_venv() -> None:
+	"""PEP668環境でも動くように、webots_new/.venv を優先して使う。"""
+	vpy = ROOT / ".venv" / "bin" / "python"
+	if not vpy.exists():
+		return
+	if Path(sys.prefix).resolve() == (ROOT / ".venv").resolve():
+		return
+	os.execv(str(vpy), [str(vpy)] + sys.argv)
 
 
 def read_last_session() -> dict | None:
@@ -75,6 +86,8 @@ def resolve_image_path(image_path: str | None) -> str | None:
 
 
 def main() -> int:
+	_ensure_local_venv()
+
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--session-id", default="")
 	args = parser.parse_args()
@@ -161,7 +174,22 @@ def main() -> int:
 
 	# ルールがNONE以外の脚だけVLMを走らせる
 	if to_vlm:
-		vlm.infer_session(session, leg_ids=to_vlm)
+		try:
+			ok_loaded = vlm._ensure_loaded()  # type: ignore[attr-defined]
+		except Exception:
+			ok_loaded = False
+		if not ok_loaded:
+			err = None
+			try:
+				err = vlm.last_load_error()  # type: ignore[attr-defined]
+			except Exception:
+				err = None
+			msg = "[vlm_run] VLM model load failed -> skip VLM"
+			if err:
+				msg += f" ({err})"
+			print(msg)
+		else:
+			vlm.infer_session(session, leg_ids=to_vlm)
 
 	# 0.2*ルール(one-hot) + 0.8*VLM で融合し、cause_finalを最終確定として更新
 	for leg_id in ["FL", "FR", "RL", "RR"]:
@@ -182,13 +210,46 @@ def main() -> int:
 			leg.fused_probs[cause_rule] = 1.0
 			leg.cause_final = cause_rule
 			continue
+
+		# ゲート: VLMが曖昧(一様/低確信)なら悪化要因になりやすいので無視する
+		use_vlm = True
+		try:
+			items = [(k, float(v)) for k, v in vlm_probs.items() if isinstance(v, (int, float))]
+			items.sort(key=lambda kv: kv[1], reverse=True)
+			max_p = items[0][1] if items else 0.0
+			second_p = items[1][1] if len(items) > 1 else 0.0
+			pred = items[0][0] if items else None
+			if not (max_p >= 0.60 and (max_p - second_p) >= 0.20):
+				use_vlm = False
+			# 現状のVLMは誤反転が多いので、ルールと一致する場合のみ採用（悪化防止）
+			if pred is None or str(pred) != cause_rule:
+				use_vlm = False
+		except Exception:
+			use_vlm = False
+
+		if not use_vlm:
+			leg.cause_fused = cause_rule
+			leg.fused_probs = {"NONE": 0.0, "BURIED": 0.0, "TRAPPED": 0.0, "TANGLED": 0.0, "MALFUNCTION": 0.0}
+			leg.fused_probs[cause_rule] = 1.0
+			leg.cause_final = cause_rule
+			continue
 		fused_probs, cause_fused = fuse_rule_and_vlm(cause_rule, vlm_probs, rule_weight=0.2, vlm_weight=0.8)
 		leg.fused_probs = fused_probs
 		leg.cause_fused = cause_fused
 		leg.cause_final = cause_fused
 
 	updated = dict(session_dict)
-	updated["vlm_completed"] = True
+
+	vlm_success = False
+	for leg_id in to_vlm:
+		leg = session.legs.get(leg_id)
+		if leg is None:
+			continue
+		if isinstance(getattr(leg, "vlm_probs", None), dict) and getattr(leg, "vlm_probs"):
+			vlm_success = True
+			break
+	if vlm_success:
+		updated["vlm_completed"] = True
 	updated_legs = dict(updated.get("legs", {}) or {})
 	for leg_id in ["FL", "FR", "RL", "RR"]:
 		legd = dict(updated_legs.get(leg_id, {}) or {})

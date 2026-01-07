@@ -55,7 +55,7 @@ def show(result: dict) -> None:
     legs = result.get("legs", {})
 
     print("-" * 80)
-    print(f"{'脚':^4} | {'判定':^10} | {'p_can':^6} | {'原因':^8} | {'VLM':^8} | {'期待値':^8}")
+    print(f"{'脚':^4} | {'判定':^10} | {'p_can':^6} | {'原因':^8} | {'期待値':^8}")
     print("-" * 80)
 
     correct = 0
@@ -70,15 +70,13 @@ def show(result: dict) -> None:
         movement = leg.get("movement_result", "-")
         p_can = float(leg.get("p_can", 0.0))
         cause_final = leg.get("cause_final", "-")
-        vlm_pred = leg.get("vlm_pred", None)
         expected = leg.get("expected_cause", "-")
         fallen = bool(leg.get("fallen", False))
 
         # 旧view_result.pyと同じ表示ルール（転倒で expected=NONE のとき）
         expected_text = "正常/転倒" if fallen and expected == "NONE" else jp_cause(expected)
 
-        vlm_text = jp_cause(vlm_pred) if isinstance(vlm_pred, str) and vlm_pred else "-"
-        print(f"{leg_id:^4} | {movement:^10} | {p_can:^6.3f} | {jp_cause(cause_final):^8} | {vlm_text:^8} | {expected_text:^8}")
+        print(f"{leg_id:^4} | {movement:^10} | {p_can:^6.3f} | {jp_cause(cause_final):^8} | {expected_text:^8}")
 
         # 正解率（旧ロジック準拠）
         if cause_final == expected:

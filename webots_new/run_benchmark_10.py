@@ -36,7 +36,6 @@ ROOT = Path(__file__).resolve().parent
 WORLD = ROOT / "worlds" / "sotuken_world.wbt"
 SET_ENV = ROOT / "set_environment.py"
 SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
-VLM_POST = ROOT / "run_vlm_for_last_session.py"
 BENCH_DIR = ROOT / "benchmarks"
 LOG_DIR = BENCH_DIR / "logs"
 
@@ -50,145 +49,6 @@ def append_jsonl(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-
-
-def maybe_run_vlm_postprocess() -> None:
-    """VLM_ENABLE=1 のとき、最新セッションに VLM結果/融合結果を追記する（重い推論を1回だけロードして使い回す）。"""
-    if os.getenv("VLM_ENABLE", "0").strip() != "1":
-        return
-
-    started = time.time()
-
-    try:
-        from controllers.diagnostics_pipeline.models import LegState, SessionState
-        from controllers.diagnostics_pipeline.vlm_client import VLMAnalyzer
-    except Exception:
-        print("[benchmark] VLM enabled but deps missing -> skip")
-        return
-
-    session_dict = read_last_session()
-    if not session_dict:
-        return
-
-    # すでにvlm_completedなら二重に走らせない
-    if bool(session_dict.get("vlm_completed", False)):
-        return
-
-    sid = session_dict.get("session_id", "")
-    print(f"[benchmark] vlm_postprocess start session={sid}")
-
-    session = SessionState(session_id=str(session_dict.get("session_id", "")))
-    img = session_dict.get("image_path")
-    # 画像パスの解決（古い形式/相対パスを吸収）
-    if isinstance(img, str) and img:
-        p = Path(img)
-        if p.exists():
-            session.image_path = str(p)
-        else:
-            p2 = ROOT / p
-            if p2.exists():
-                session.image_path = str(p2)
-            else:
-                p3 = ROOT / "controllers" / "drone_circular_controller" / "logs" / p
-                session.image_path = str(p3)
-    else:
-        session.image_path = None
-    session.fallen = bool(session_dict.get("fallen", False))
-    session.fallen_probability = float(session_dict.get("fallen_probability", 0.0) or 0.0)
-
-    legs = session_dict.get("legs", {}) or {}
-    for leg_id in LEG_IDS:
-        legd = (legs.get(leg_id, {}) or {})
-        leg = LegState(leg_id=leg_id)
-        leg.spot_can = float(legd.get("spot_can", 0.5) or 0.5)
-        leg.drone_can = float(legd.get("drone_can", 0.5) or 0.5)
-        try:
-            leg.p_drone = dict(legd.get("p_drone", {}) or {})
-        except Exception:
-            pass
-        try:
-            leg.p_llm = dict(legd.get("p_llm", {}) or {})
-        except Exception:
-            pass
-        leg.movement_result = str(legd.get("movement_result", "一部動く"))
-        leg.cause_final = str(legd.get("cause_final", "NONE"))
-        leg.p_can = float(legd.get("p_can", 0.0) or 0.0)
-        leg.expected_cause = str(legd.get("expected_cause", "NONE"))
-        leg.fallen = bool(legd.get("fallen", False))
-        leg.fallen_probability = float(legd.get("fallen_probability", 0.0) or 0.0)
-        session.legs[leg_id] = leg
-
-    # モデルはグローバルに1回だけロードして使い回す
-    global _VLM
-    if "_VLM" not in globals() or globals().get("_VLM") is None:
-        globals()["_VLM"] = VLMAnalyzer()
-    vlm = globals()["_VLM"]
-
-    # 仕様.txtのルール判定（①〜④）
-    try:
-        from controllers.diagnostics_pipeline.rule_fusion import fuse_rule_and_vlm, rule_based_decision
-    except Exception:
-        print("[benchmark] rule_fusion missing -> skip")
-        return
-
-    to_vlm: list[str] = []
-    for leg_id in LEG_IDS:
-        leg = session.legs.get(leg_id)
-        if leg is None:
-            continue
-        prob_dist = getattr(leg, "p_llm", None) or getattr(leg, "p_drone", {}) or {}
-        movement, cause_rule, p_rule = rule_based_decision(leg.spot_can, leg.drone_can, prob_dist)
-        leg.movement_result = movement
-        leg.cause_rule = cause_rule
-        leg.p_rule = p_rule
-        if cause_rule != "NONE":
-            to_vlm.append(leg_id)
-
-    if to_vlm:
-        vlm.infer_session(session, leg_ids=to_vlm)
-
-    for leg_id in LEG_IDS:
-        leg = session.legs.get(leg_id)
-        if leg is None:
-            continue
-        cause_rule = str(getattr(leg, "cause_rule", None) or "NONE")
-        if cause_rule == "NONE":
-            leg.cause_fused = "NONE"
-            leg.fused_probs = {"NONE": 1.0, "BURIED": 0.0, "TRAPPED": 0.0, "TANGLED": 0.0, "MALFUNCTION": 0.0}
-            leg.cause_final = "NONE"
-            continue
-        vlm_probs = getattr(leg, "vlm_probs", None) or {}
-        if not isinstance(vlm_probs, dict) or not vlm_probs:
-            leg.cause_fused = cause_rule
-            leg.fused_probs = {"NONE": 0.0, "BURIED": 0.0, "TRAPPED": 0.0, "TANGLED": 0.0, "MALFUNCTION": 0.0}
-            leg.fused_probs[cause_rule] = 1.0
-            leg.cause_final = cause_rule
-            continue
-        fused_probs, cause_fused = fuse_rule_and_vlm(cause_rule, vlm_probs, rule_weight=0.2, vlm_weight=0.8)
-        leg.fused_probs = fused_probs
-        leg.cause_fused = cause_fused
-        leg.cause_final = cause_fused
-
-    updated = dict(session_dict)
-    updated["vlm_completed"] = True
-    updated_legs = dict(updated.get("legs", {}) or {})
-    for leg_id in LEG_IDS:
-        legd = dict(updated_legs.get(leg_id, {}) or {})
-        leg = session.legs.get(leg_id)
-        legd["vlm_pred"] = (leg.vlm_pred if leg else None)
-        legd["vlm_probs"] = (leg.vlm_probs if leg else None)
-        legd["cause_rule"] = (leg.cause_rule if leg else None)
-        legd["p_rule"] = (leg.p_rule if leg else None)
-        legd["cause_fused"] = (leg.cause_fused if leg else None)
-        legd["fused_probs"] = (leg.fused_probs if leg else None)
-        legd["cause_final"] = (leg.cause_final if leg else legd.get("cause_final"))
-        legd["movement_result"] = (leg.movement_result if leg else legd.get("movement_result"))
-        updated_legs[leg_id] = legd
-    updated["legs"] = updated_legs
-
-    append_jsonl(SESSIONS, updated)
-    elapsed = time.time() - started
-    print(f"[benchmark] vlm_postprocess appended ({elapsed:.1f}s)")
 
 
 def read_last_session() -> dict | None:
@@ -248,9 +108,6 @@ def run_one(pattern_name: str, envs: list[str]) -> dict | None:
         subprocess.run(cmd_webots, check=True, stdout=f, stderr=subprocess.STDOUT, env=env)
     elapsed = time.time() - started
     print(f"[benchmark] webots finished: {elapsed:.1f}s log={log_path}")
-
-    # 2.5) VLM を Webots外で実行（このPythonプロセスでモデルを使い回す）
-    maybe_run_vlm_postprocess()
     # 3) 追加された最新セッションを読む
     after_lines = count_lines(SESSIONS)
     if after_lines <= before_lines:
@@ -272,24 +129,6 @@ def score_session(session: dict, expected: dict[str, str]) -> tuple[int, int]:
         total += 1
         exp = expected.get(leg_id, "NONE")
         got = (legs.get(leg_id, {}) or {}).get("cause_final", "")
-        if got == exp:
-            ok += 1
-
-    return ok, total
-
-
-def score_session_vlm(session: dict, expected: dict[str, str]) -> tuple[int, int]:
-    if not session:
-        return 0, len(LEG_IDS)
-
-    legs = session.get("legs", {})
-    ok = 0
-    total = 0
-
-    for leg_id in LEG_IDS:
-        total += 1
-        exp = expected.get(leg_id, "NONE")
-        got = (legs.get(leg_id, {}) or {}).get("vlm_pred", None)
         if got == exp:
             ok += 1
 
@@ -352,37 +191,27 @@ def main() -> None:
     total_ok = 0
     total = 0
 
-    total_ok_vlm = 0
-    total_vlm = 0
-
     results = []
 
     for name, envs in patterns:
         expected = {"FL": envs[0], "FR": envs[1], "RL": envs[2], "RR": envs[3]}
         session = run_one(name, envs)
         ok, n = score_session(session or {}, expected)
-        ok_vlm, n_vlm = score_session_vlm(session or {}, expected)
         total_ok += ok
         total += n
 
-        total_ok_vlm += ok_vlm
-        total_vlm += n_vlm
-
         sid = (session or {}).get("session_id", "")
-        results.append((name, sid, ok, n, ok_vlm, n_vlm))
-        print(f"[benchmark] score cause_final {ok}/{n} | vlm_pred {ok_vlm}/{n_vlm} session={sid}")
+        results.append((name, sid, ok, n))
+        print(f"[benchmark] score cause_final {ok}/{n} session={sid}")
 
     print("\n" + "=" * 70)
     print("[benchmark] summary")
     print("=" * 70)
-    for name, sid, ok, n, ok_vlm, n_vlm in results:
-        print(f"  {name}: cause_final {ok}/{n} | vlm_pred {ok_vlm}/{n_vlm} ({sid})")
+    for name, sid, ok, n in results:
+        print(f"  {name}: cause_final {ok}/{n} ({sid})")
     if total > 0:
         acc = 100.0 * total_ok / total
         print(f"\n[benchmark] total: {total_ok}/{total} ({acc:.1f}%)")
-    if total_vlm > 0:
-        acc_vlm = 100.0 * total_ok_vlm / total_vlm
-        print(f"[benchmark] total(vlm): {total_ok_vlm}/{total_vlm} ({acc_vlm:.1f}%)")
 
 
 if __name__ == "__main__":

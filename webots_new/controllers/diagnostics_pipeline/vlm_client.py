@@ -95,6 +95,7 @@ class VLMAnalyzer:
         )
         self._model = None
         self._tokenizer = None
+        self._last_load_error: str | None = None
 
     def _ensure_loaded(self) -> bool:
         if self._model is not None and self._tokenizer is not None:
@@ -120,34 +121,34 @@ class VLMAnalyzer:
             self._model = model
             self._tokenizer = tokenizer
             return True
-        except Exception:
+        except Exception as exc:
+            # 依存不足/モデル取得失敗などの原因切り分け用に保持
+            self._last_load_error = repr(exc)
             return False
 
+    def last_load_error(self) -> str | None:
+        return self._last_load_error
+
     def _load_image_rgb(self, image_path: str):
-        """VLM用に画像を読み込み、脚周辺が入りやすいように軽く前処理する。"""
+        """VLM用に画像を読み込み、全脚が切れないように軽く前処理する。"""
         try:
             from PIL import Image  # type: ignore
 
             img = Image.open(image_path).convert("RGB")
 
-            # 正方形crop（縦長画像は下寄せにして足元を残す）
+            # 横長画像を正方形にcropすると左右の脚が切れやすいので、ここではcropしない。
+            # 長辺だけを上限に合わせて縮小（小さい画像はそのまま）。
             w, h = img.size
-            s = min(w, h)
-            if w > h:
-                left = max(0, (w - s) // 2)
-                top = 0
-            else:
-                left = 0
-                # 縦方向に余白がある場合、少し下側を優先（脚/地面が写りやすい）
-                slack = h - s
-                top = max(0, int(round(slack * 0.55)))
-            img = img.crop((left, top, left + s, top + s))
-
-            # 推論負荷を抑えつつ細部を残す
-            try:
-                img = img.resize((320, 320), resample=Image.BICUBIC)
-            except Exception:
-                img = img.resize((320, 320))
+            max_side = max(w, h)
+            limit = 512
+            if max_side > limit:
+                scale = limit / float(max_side)
+                nw = max(1, int(round(w * scale)))
+                nh = max(1, int(round(h * scale)))
+                try:
+                    img = img.resize((nw, nh), resample=Image.BICUBIC)
+                except Exception:
+                    img = img.resize((nw, nh))
 
             return img
         except Exception:
@@ -198,7 +199,7 @@ class VLMAnalyzer:
                 "- NONE: normal/free leg and foot.\n"
                 "- MALFUNCTION: the leg looks free but does not actuate; use hints if needed.\n"
                 f"Hints: {hints}\n"
-                "Output ONLY valid JSON like: {\"NONE\":0.1,\"BURIED\":0.2,\"TRAPPED\":0.2,\"TANGLED\":0.2,\"MALFUNCTION\":0.3}"
+                "Output ONLY valid JSON with those keys and numeric probabilities."
             )
 
             try:

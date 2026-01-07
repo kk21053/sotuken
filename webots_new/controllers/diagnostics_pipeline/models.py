@@ -48,19 +48,9 @@ class LegState:
     cause_final: str = "NONE"
     p_can: float = 0.0
 
-    # VLM 予測（cause_final には反映しない。ログ比較用）
-    vlm_pred: Optional[str] = None
-
     # 仕様.txt準拠のルールベース判定
     cause_rule: Optional[str] = None
     p_rule: Optional[Dict[str, float]] = None
-
-    # VLMの確率分布
-    vlm_probs: Optional[Dict[str, float]] = None
-
-    # ルール(0.2) + VLM(0.8) の融合結果
-    cause_fused: Optional[str] = None
-    fused_probs: Optional[Dict[str, float]] = None
 
     # シナリオの期待値（正解率表示に使う）
     expected_cause: str = "NONE"
@@ -81,12 +71,8 @@ class LegState:
             movement_result=self.movement_result,
             cause_final=self.cause_final,
             p_can=self.p_can,
-            vlm_pred=self.vlm_pred,
             cause_rule=self.cause_rule,
             p_rule=dict(self.p_rule) if self.p_rule else None,
-            vlm_probs=dict(self.vlm_probs) if self.vlm_probs else None,
-            cause_fused=self.cause_fused,
-            fused_probs=dict(self.fused_probs) if self.fused_probs else None,
             expected_cause=self.expected_cause,
             fallen=self.fallen,
             fallen_probability=self.fallen_probability,
@@ -117,12 +103,8 @@ class LegStatus:
     movement_result: str
     cause_final: str
     p_can: float
-    vlm_pred: Optional[str] = None
     cause_rule: Optional[str] = None
     p_rule: Optional[Dict[str, float]] = None
-    vlm_probs: Optional[Dict[str, float]] = None
-    cause_fused: Optional[str] = None
-    fused_probs: Optional[Dict[str, float]] = None
     expected_cause: str = "NONE"
     fallen: bool = False
     fallen_probability: float = 0.0
@@ -152,12 +134,8 @@ class SessionRecord:
                     "movement_result": leg.movement_result,
                     "cause_final": leg.cause_final,
                     "p_can": leg.p_can,
-                    "vlm_pred": leg.vlm_pred,
                     "cause_rule": leg.cause_rule,
                     "p_rule": leg.p_rule,
-                    "vlm_probs": leg.vlm_probs,
-                    "cause_fused": leg.cause_fused,
-                    "fused_probs": leg.fused_probs,
                     "expected_cause": leg.expected_cause,
                     "fallen": leg.fallen,
                     "fallen_probability": leg.fallen_probability,

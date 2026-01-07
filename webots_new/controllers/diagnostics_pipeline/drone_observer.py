@@ -99,20 +99,10 @@ class DroneObservationAggregator:
         else:
             averaged = {k: acc.get(k, 0.0) / count for k in config.CAUSE_LABELS}
 
-        if leg.fallen:
-            fallen_conf = min(0.95, max(leg.fallen_probability, 0.01))
-            leg.p_drone = normalize_distribution(
-                {
-                    "NONE": 0.01,
-                    "BURIED": 0.01,
-                    "TRAPPED": 0.01,
-                    "TANGLED": 0.01,
-                    "MALFUNCTION": 0.01,
-                    "FALLEN": fallen_conf,
-                }
-            )
-        else:
-            leg.p_drone = normalize_distribution(averaged)
+        # 転倒は「状態」として記録するが、脚の拘束原因の推定（p_drone）を
+        # それだけで塗りつぶさない。
+        # 目的: 転倒が起きても脚の原因推定は継続し、過剰にFALLEN一択にならないようにする。
+        leg.p_drone = normalize_distribution(averaged)
 
     # ---- 内部処理（小さな部品） ----
 
@@ -127,14 +117,27 @@ class DroneObservationAggregator:
         return out
 
     def _detect_fallen(self, base_orientations: Sequence[Tuple[float, float, float]]):
+        # 転倒は「一瞬だけ閾値を超えた」では誤検出しやすい。
+        # 連続して一定回数以上閾値を超えた場合に転倒とみなす（汎用的なノイズ対策）。
         fallen = False
         roll_max = 0.0
         pitch_max = 0.0
+
+        over = 0
+        need = 3  # 3フレーム連続で閾値超えなら転倒
         for roll, pitch, _ in base_orientations:
-            roll_max = max(roll_max, abs(roll))
-            pitch_max = max(pitch_max, abs(pitch))
-            if abs(roll) > config.FALLEN_THRESHOLD_DEG or abs(pitch) > config.FALLEN_THRESHOLD_DEG:
-                fallen = True
+            roll_a = abs(roll)
+            pitch_a = abs(pitch)
+            roll_max = max(roll_max, roll_a)
+            pitch_max = max(pitch_max, pitch_a)
+
+            if roll_a > config.FALLEN_THRESHOLD_DEG or pitch_a > config.FALLEN_THRESHOLD_DEG:
+                over += 1
+                if over >= need:
+                    fallen = True
+            else:
+                over = 0
+
         return fallen, roll_max, pitch_max
 
     def _build_features(
@@ -224,25 +227,32 @@ class DroneObservationAggregator:
         return self._estimate_cause_distribution(med)
 
     def _estimate_cause_distribution(self, f: Dict[str, float]) -> Dict[str, float]:
-        # 転倒が最優先
+        # 転倒は「状態」なので検出はするが、拘束原因の推定を丸ごとFALLENにしない。
+        # fallen=true の場合は、まず fallen を無視した分布を作り、最後にFALLENを少し足す。
         if f.get("fallen", False):
             max_angle = max(float(f.get("max_roll", 0.0)), float(f.get("max_pitch", 0.0)))
             fallen_conf = min(0.95, max_angle / (config.FALLEN_THRESHOLD_DEG * 2))
-            return normalize_distribution(
-                {
-                    "NONE": 0.01,
-                    "BURIED": 0.01,
-                    "TRAPPED": 0.01,
-                    "TANGLED": 0.01,
-                    "MALFUNCTION": 0.01,
-                    "FALLEN": fallen_conf,
-                }
-            )
+
+            f2 = dict(f)
+            f2["fallen"] = False
+            base = self._estimate_cause_distribution(f2)
+
+            # FALLENを混ぜる上限を抑える（脚診断を優先する）
+            fallen_w = min(0.25, float(fallen_conf))
+            out = {k: float(v) * (1.0 - fallen_w) for k, v in base.items() if k != "FALLEN"}
+            out["FALLEN"] = fallen_w
+            return normalize_distribution(out)
 
         end_disp = float(f.get("end_disp", 0.0))
         delta_theta_deg = float(f.get("delta_theta_deg", 0.0))
         path_straightness = float(f.get("path_straightness", 0.0))
         reversals = float(f.get("reversals", 0.0))
+
+        # robust 集計がある場合は、単発でも大きく出た兆候を拾う
+        delta_theta_deg_max = float(f.get("delta_theta_deg_max", delta_theta_deg))
+        end_disp_max = float(f.get("end_disp_max", end_disp))
+        delta_theta_peak = max(delta_theta_deg, delta_theta_deg_max)
+        end_disp_peak = max(end_disp, end_disp_max)
 
         # robust 集計がある場合の補助統計（なければ現値を使う）
         end_disp_p75 = float(f.get("end_disp_p75", end_disp))
@@ -257,7 +267,13 @@ class DroneObservationAggregator:
         BURIED_DISPLACEMENT_THRESHOLD = 0.005
         NORMAL_DISPLACEMENT_MIN = 0.015
 
-        buried = (end_disp < BURIED_DISPLACEMENT_THRESHOLD) and (delta_theta_deg < BURIED_ANGLE_THRESHOLD)
+        # TANGLED の兆候（TRAPPED分岐でも使う）
+        t_rev = clamp(reversals_max / 3.0)
+        t_straight = clamp((path_straightness_max - 1.10) / 1.00)
+        tangled_hint = clamp(0.60 * t_rev + 0.40 * t_straight)
+
+        # BURIED: 角度変化も移動も「常に」極小になりやすいので、max統計でも確認して誤検知を減らす
+        buried = (end_disp_peak < BURIED_DISPLACEMENT_THRESHOLD) and (delta_theta_peak < BURIED_ANGLE_THRESHOLD)
         if buried:
             return normalize_distribution(
                 {
@@ -271,7 +287,7 @@ class DroneObservationAggregator:
             )
 
         # end_disp が十分大きいなら正常優先
-        if end_disp >= NORMAL_DISPLACEMENT_MIN:
+        if end_disp_p75 >= NORMAL_DISPLACEMENT_MIN:
             return normalize_distribution(
                 {
                     "NONE": 0.85,
@@ -283,17 +299,20 @@ class DroneObservationAggregator:
                 }
             )
 
-        trapped = (delta_theta_deg >= TRAPPED_ANGLE_MIN) and (
-            BURIED_DISPLACEMENT_THRESHOLD < end_disp < TRAPPED_DISPLACEMENT_MAX
+        trapped = (delta_theta_peak >= TRAPPED_ANGLE_MIN) and (
+            BURIED_DISPLACEMENT_THRESHOLD < end_disp_p75 < TRAPPED_DISPLACEMENT_MAX
         )
         if trapped:
-            score = clamp(0.75 + 0.20 * (1.0 - end_disp / TRAPPED_DISPLACEMENT_MAX))
+            base_trapped = clamp(0.75 + 0.20 * (1.0 - end_disp_p75 / TRAPPED_DISPLACEMENT_MAX))
+            # TANGLED兆候が強いときはTRAPPEDを下げ、TANGLEDを上げる（離散分岐ではなく連続的に）
+            trapped_score = clamp(base_trapped * (1.0 - 0.60 * tangled_hint))
+            tangled_score = 0.05 + 0.55 * tangled_hint
             return normalize_distribution(
                 {
                     "NONE": 0.05,
                     "BURIED": 0.05,
-                    "TRAPPED": score,
-                    "TANGLED": 0.05,
+                    "TRAPPED": trapped_score,
+                    "TANGLED": tangled_score,
                     "MALFUNCTION": 0.04,
                     "FALLEN": 0.01,
                 }
@@ -303,15 +322,15 @@ class DroneObservationAggregator:
         # - BURIED ほど角度が極小ではない
         # - TRAPPED_ANGLE_MIN に届かない場合でも TRAPPED 寄りにする
         trapped_mid = (end_disp < BURIED_DISPLACEMENT_THRESHOLD) and (
-            BURIED_ANGLE_THRESHOLD <= delta_theta_deg < TRAPPED_ANGLE_MIN
+            BURIED_ANGLE_THRESHOLD <= delta_theta_peak < TRAPPED_ANGLE_MIN
         )
         if trapped_mid:
             return normalize_distribution(
                 {
                     "NONE": 0.06,
                     "BURIED": 0.10,
-                    "TRAPPED": 0.72,
-                    "TANGLED": 0.06,
+                    "TRAPPED": 0.72 * (1.0 - 0.60 * tangled_hint),
+                    "TANGLED": 0.06 + 0.55 * tangled_hint,
                     "MALFUNCTION": 0.05,
                     "FALLEN": 0.01,
                 }
@@ -330,9 +349,7 @@ class DroneObservationAggregator:
 
         # TANGLED は「進行方向のぶれ / 往復 / ぎくしゃく」を拾う
         # robust 集計では max を使って、単発の強い兆候も反映する
-        t_rev = clamp(reversals_max / 3.0)
-        t_straight = clamp((path_straightness_max - 1.10) / 1.00)
-        t_hi_theta = clamp((delta_theta_deg - 2.0) / 1.3) * clamp((0.016 - end_disp) / 0.010)
+        t_hi_theta = clamp((delta_theta_peak - 2.0) / 1.3) * clamp((0.016 - end_disp_p75) / 0.010)
         tangled_w = clamp(0.65 * t_rev + 0.25 * t_straight + 0.10 * t_hi_theta)
 
         # MALFUNCTION は受け皿（ただし強すぎると何でもMALFUNCTIONになる）

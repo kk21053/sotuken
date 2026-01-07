@@ -232,17 +232,91 @@ class DiagnosticsPipeline:
 
 		# 最終判定（仕様ルール）
 		try:
-			dist = self.llm.infer(leg, all_legs=self.session.legs, trial_direction=buf.direction)
-			leg.cause_final = select_cause(dist)
-		except Exception as exc:
-			print(f"[pipeline_new] warning: llm.infer failed: {exc}")
-			leg.cause_final = select_cause(leg.p_drone)
+			# 1) ルールベースで分布を作る（この段階で特徴量・スコアが確定している）
+			dist_rule = self.llm.infer_rule_based_only(leg)
+			leg.p_llm = dict(dist_rule)
+			leg.cause_final = select_cause(dist_rule)
+			self.llm.apply_spec_rule_logging(leg, dist_rule)
 
-		# ログ
-		try:
-			self.logger.log_trial(self.session.session_id, leg, trial, self.session.fallen)
+			# 2) この段階でJSONL出力（特徴量・スコア確定ログ）
+			try:
+				self.logger.log_trial(
+					self.session.session_id,
+					leg,
+					trial,
+					self.session.fallen,
+					stage="features_ready",
+				)
+			except Exception as exc:
+				print(f"[pipeline_new] warning: pre log_trial failed: {exc}")
+
+			# 3) Qwenに渡すJSONを作成
+			qwen_payload = self.llm.build_qwen_payload(leg, fallback=dist_rule)
+
+			# 4) Qwenで推論（条件を満たすときのみ。満たさない場合はルール分布を使う）
+			dist_final = dict(dist_rule)
+			if self.llm.should_use_qwen(leg, dist_rule):
+				try:
+					print(
+						f"[qwen] start session={self.session.session_id} leg={leg.leg_id} trial={trial.trial_index}",
+						flush=True,
+					)
+				except Exception:
+					pass
+				started = None
+				try:
+					import time
+
+					started = time.time()
+				except Exception:
+					started = None
+				updated = self.llm.infer_with_qwen_payload(qwen_payload)
+				if updated is not None:
+					leg.p_llm = dict(updated)
+					dist_final = dict(updated)
+				try:
+					import time
+
+					elapsed = (time.time() - started) if started is not None else None
+					if elapsed is None:
+						print(f"[qwen] done session={self.session.session_id} leg={leg.leg_id}", flush=True)
+					else:
+						print(
+							f"[qwen] done session={self.session.session_id} leg={leg.leg_id} ({elapsed:.1f}s)",
+							flush=True,
+						)
+				except Exception:
+					pass
+
+			# 5) 最終診断結果の確定
+			leg.cause_final = select_cause(dist_final)
+			self.llm.apply_spec_rule_logging(leg, dist_final)
+
+			# 6) 最終確定後のJSONL出力
+			try:
+				self.logger.log_trial(
+					self.session.session_id,
+					leg,
+					trial,
+					self.session.fallen,
+					stage="finalized",
+				)
+			except Exception as exc:
+				print(f"[pipeline_new] warning: post log_trial failed: {exc}")
 		except Exception as exc:
-			print(f"[pipeline_new] warning: log_trial failed: {exc}")
+			print(f"[pipeline_new] warning: llm/qwen pipeline failed: {exc}")
+			# 何か壊れても落とさない（droneの分布で最低限の確定）
+			leg.cause_final = select_cause(leg.p_drone)
+			try:
+				self.logger.log_trial(
+					self.session.session_id,
+					leg,
+					trial,
+					self.session.fallen,
+					stage="finalized",
+				)
+			except Exception:
+				pass
 
 		return trial
 

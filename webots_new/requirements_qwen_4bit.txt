@@ -1,0 +1,13 @@
+# Qwen2.5-3B Instruct (4bit) local inference
+# Install into webots_new/.venv:
+#   ./webots_new/.venv/bin/pip install -r webots_new/requirements_qwen_4bit.txt
+
+transformers>=4.45.0
+accelerate>=0.34.0
+bitsandbytes>=0.43.0
+safetensors>=0.4.3
+# torch is intentionally not pinned; install the appropriate build for your machine (CPU/CUDA)
+
+# CPUでも4bit量子化(GGUF)で動かす場合
+llama-cpp-python>=0.3.0
+huggingface_hub>=0.23.0

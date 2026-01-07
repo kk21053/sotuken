@@ -402,7 +402,7 @@ class DroneCircularController:
                 snap = self._save_snapshot_once()
                 if snap:
                     try:
-                        # セッションログに載せる（VLM側が使う）
+                            # セッションログに載せる（外部処理が参照できるように保持）
                         self.pipeline.session.image_path = snap
                     except Exception:
                         pass

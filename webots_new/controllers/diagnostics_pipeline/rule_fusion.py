@@ -1,10 +1,8 @@
-"""仕様.txt準拠のルール判定 + VLM融合ユーティリティ
+"""仕様.txt準拠のルール判定ユーティリティ
 
 仕様.txt Step7 のルール(①〜④)をそのまま実装する。
-- 入力: spot_can, drone_can, p_drone(拘束状況の確率分布)
+- 入力: spot_can, drone_can, prob_dist(拘束状況の確率分布)
 - 出力: movement_result, cause_rule, p_rule(one-hot)
-
-さらに、VLMの確率分布(vlm_probs)とルール(one-hot)を重み付け融合する。
 """
 
 from __future__ import annotations
@@ -94,23 +92,3 @@ def rule_based_decision(
     movement = "一部動く"
     cause = argmax_label(prob_dist)
     return movement, cause, one_hot(cause)
-
-
-def fuse_rule_and_vlm(
-    cause_rule: str,
-    vlm_probs: Dict[str, float],
-    rule_weight: float = 0.2,
-    vlm_weight: float = 0.8,
-    labels: Iterable[str] = CAUSES_5,
-) -> Tuple[Dict[str, float], str]:
-    """fused_probs = 0.2*one_hot(rule) + 0.8*vlm_probs, argmaxを返す。"""
-
-    rp = one_hot(cause_rule, labels)
-    vp = normalize_probs(vlm_probs, labels)
-
-    fused: Dict[str, float] = {}
-    for lab in labels:
-        fused[lab] = rule_weight * rp.get(lab, 0.0) + vlm_weight * vp.get(lab, 0.0)
-
-    fused = normalize_probs(fused, labels)
-    return fused, argmax_label(fused, labels)

@@ -1,31 +1,31 @@
 INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.py
 INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py --radius=3.5 --height=3.0 --period=25.0 --center-def=SPOT
 [drone_new] camera device found: camera
-[drone_new] init session=drone_20260105_074641 timestep=16ms
+[drone_new] init session=drone_20260107_000936 timestep=16ms
 [drone_new] expected={'FL': 'TANGLED', 'FR': 'MALFUNCTION', 'RL': 'TRAPPED', 'RR': 'NONE'}
-[spot_new] init session=spot_20260105_074641 timestep=16ms
+[spot_new] init session=spot_20260107_000936 timestep=16ms
 [spot_new] env FL=TANGLED FR=MALFUNCTION RL=TRAPPED RR=NONE
 [spot_new] ===== FL start =====
 [spot_new] FL trial 1/6 dir=+ joint=knee env=TANGLED
 [drone_new] start FL trial 1/6 dir=+
-[spot_new] FL trial 1/6 done self_can_raw=0.656
+[spot_new] FL trial 1/6 done self_can_raw=0.812
 [spot_new] FL trial 2/6 dir=- joint=knee env=TANGLED
-[drone_new] done  FL trial 1/6 frames=24 spot_raw=0.656
+[drone_new] done  FL trial 1/6 frames=24 spot_raw=0.812
 [drone_new] progress FL 1/6
 [drone_new] start FL trial 2/6 dir=-
-[spot_new] FL trial 2/6 done self_can_raw=0.652
+[spot_new] FL trial 2/6 done self_can_raw=0.776
 [spot_new] FL trial 3/6 dir=+ joint=hip env=TANGLED
-[drone_new] done  FL trial 2/6 frames=24 spot_raw=0.652
+[drone_new] done  FL trial 2/6 frames=24 spot_raw=0.776
 [drone_new] progress FL 2/6
 [drone_new] start FL trial 3/6 dir=+
-[spot_new] FL trial 3/6 done self_can_raw=0.215
+[spot_new] FL trial 3/6 done self_can_raw=0.105
 [spot_new] FL trial 4/6 dir=- joint=hip env=TANGLED
-[drone_new] done  FL trial 3/6 frames=24 spot_raw=0.215
+[drone_new] done  FL trial 3/6 frames=24 spot_raw=0.105
 [drone_new] progress FL 3/6
 [drone_new] start FL trial 4/6 dir=-
-[spot_new] FL trial 4/6 done self_can_raw=0.342
+[spot_new] FL trial 4/6 done self_can_raw=0.142
 [spot_new] FL trial 5/6 dir=+ joint=shoulder env=TANGLED
-[drone_new] done  FL trial 4/6 frames=24 spot_raw=0.342
+[drone_new] done  FL trial 4/6 frames=24 spot_raw=0.142
 [drone_new] progress FL 4/6
 [drone_new] start FL trial 5/6 dir=+
 [spot_new] FL trial 5/6 done self_can_raw=0.656
@@ -33,10 +33,10 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  FL trial 5/6 frames=24 spot_raw=0.656
 [drone_new] progress FL 5/6
 [drone_new] start FL trial 6/6 dir=-
-[spot_new] FL trial 6/6 done self_can_raw=0.254
+[spot_new] FL trial 6/6 done self_can_raw=0.289
 [spot_new] ===== FR start =====
 [spot_new] FR trial 1/6 dir=+ joint=knee env=MALFUNCTION
-[drone_new] done  FL trial 6/6 frames=24 spot_raw=0.254
+[drone_new] done  FL trial 6/6 frames=24 spot_raw=0.289
 [drone_new] progress FL 6/6
 [drone_new] start FR trial 1/6 dir=+
 [spot_new] FR trial 1/6 done self_can_raw=0.000
@@ -76,29 +76,29 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  FR trial 6/6 frames=24 spot_raw=0.000
 [drone_new] progress FR 6/6
 [drone_new] start RL trial 1/6 dir=+
-[spot_new] RL trial 1/6 done self_can_raw=0.130
+[spot_new] RL trial 1/6 done self_can_raw=0.160
 [spot_new] RL trial 2/6 dir=- joint=knee env=TRAPPED
-[drone_new] done  RL trial 1/6 frames=24 spot_raw=0.130
+[drone_new] done  RL trial 1/6 frames=24 spot_raw=0.160
 [drone_new] progress RL 1/6
 [drone_new] start RL trial 2/6 dir=-
-[spot_new] RL trial 2/6 done self_can_raw=0.125
+[spot_new] RL trial 2/6 done self_can_raw=0.156
 [spot_new] RL trial 3/6 dir=+ joint=hip env=TRAPPED
-[drone_new] done  RL trial 2/6 frames=24 spot_raw=0.125
+[drone_new] done  RL trial 2/6 frames=24 spot_raw=0.156
 [drone_new] progress RL 2/6
 [drone_new] start RL trial 3/6 dir=+
-[spot_new] RL trial 3/6 done self_can_raw=0.532
+[spot_new] RL trial 3/6 done self_can_raw=0.117
 [spot_new] RL trial 4/6 dir=- joint=hip env=TRAPPED
-[drone_new] done  RL trial 3/6 frames=24 spot_raw=0.532
+[drone_new] done  RL trial 3/6 frames=24 spot_raw=0.117
 [drone_new] progress RL 3/6
 [drone_new] start RL trial 4/6 dir=-
-[spot_new] RL trial 4/6 done self_can_raw=0.516
+[spot_new] RL trial 4/6 done self_can_raw=0.117
 [spot_new] RL trial 5/6 dir=+ joint=shoulder env=TRAPPED
-[drone_new] done  RL trial 4/6 frames=24 spot_raw=0.516
+[drone_new] done  RL trial 4/6 frames=24 spot_raw=0.117
 [drone_new] progress RL 4/6
 [drone_new] start RL trial 5/6 dir=+
-[spot_new] RL trial 5/6 done self_can_raw=0.584
+[spot_new] RL trial 5/6 done self_can_raw=0.634
 [spot_new] RL trial 6/6 dir=- joint=shoulder env=TRAPPED
-[drone_new] done  RL trial 5/6 frames=24 spot_raw=0.584
+[drone_new] done  RL trial 5/6 frames=24 spot_raw=0.634
 [drone_new] progress RL 5/6
 [drone_new] start RL trial 6/6 dir=-
 [spot_new] RL trial 6/6 done self_can_raw=0.640
@@ -112,19 +112,19 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  RR trial 1/6 frames=24 spot_raw=0.883
 [drone_new] progress RR 1/6
 [drone_new] start RR trial 2/6 dir=-
-[spot_new] RR trial 2/6 done self_can_raw=0.883
+[spot_new] RR trial 2/6 done self_can_raw=0.882
 [spot_new] RR trial 3/6 dir=+ joint=hip env=NONE
-[drone_new] done  RR trial 2/6 frames=24 spot_raw=0.883
+[drone_new] done  RR trial 2/6 frames=24 spot_raw=0.882
 [drone_new] progress RR 2/6
 [drone_new] start RR trial 3/6 dir=+
-[spot_new] RR trial 3/6 done self_can_raw=0.843
+[spot_new] RR trial 3/6 done self_can_raw=0.845
 [spot_new] RR trial 4/6 dir=- joint=hip env=NONE
-[drone_new] done  RR trial 3/6 frames=24 spot_raw=0.843
+[drone_new] done  RR trial 3/6 frames=24 spot_raw=0.845
 [drone_new] progress RR 3/6
 [drone_new] start RR trial 4/6 dir=-
-[spot_new] RR trial 4/6 done self_can_raw=0.866
+[spot_new] RR trial 4/6 done self_can_raw=0.868
 [spot_new] RR trial 5/6 dir=+ joint=shoulder env=NONE
-[drone_new] done  RR trial 4/6 frames=24 spot_raw=0.866
+[drone_new] done  RR trial 4/6 frames=24 spot_raw=0.868
 [drone_new] progress RR 4/6
 [drone_new] start RR trial 5/6 dir=+
 [spot_new] RR trial 5/6 done self_can_raw=0.839
@@ -136,7 +136,7 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  RR trial 6/6 frames=24 spot_raw=0.834
 [drone_new] progress RR 6/6
 [drone_new] all trials done -> finalize
-[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260105_074641.png
+[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260107_000936.png
 [spot_new] diagnosis complete
 INFO: spot_self_diagnosis: Terminating.
 INFO: drone_circular_controller: Terminating.

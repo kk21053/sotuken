@@ -15,9 +15,19 @@ class DiagnosticsLogger:
         self.event_writer = JsonlWriter(directory, config.JSONL_EVENT_FILENAME)
         self.session_writer = JsonlWriter(directory, config.JSONL_SESSION_FILENAME)
 
-    def log_trial(self, session_id: str, leg: LegState, trial: TrialResult, fallen: bool) -> None:
+    def log_trial(
+        self,
+        session_id: str,
+        leg: LegState,
+        trial: TrialResult,
+        fallen: bool,
+        *,
+        stage: str = "finalized",
+    ) -> None:
         payload: Dict = {
             "timestamp": time.time(),
+            # どの段階のログか（features_ready / finalized など）
+            "stage": str(stage),
             "session_id": session_id,
             "leg_id": leg.leg_id,
             "trial_index": trial.trial_index,
@@ -34,7 +44,6 @@ class DiagnosticsLogger:
             "p_llm": leg.p_llm,
             "p_can": leg.p_can,
             "cause_final": leg.cause_final,
-            "vlm_pred": leg.vlm_pred,
             "movement_result": leg.movement_result,
             "fallen": fallen,
             "trial_ok": trial.ok,
