@@ -6,7 +6,7 @@ from typing import Tuple
 LEG_IDS: Tuple[str, ...] = ("FL", "FR", "RL", "RR")
 
 # 拘束原因ラベル
-CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN")
+CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION")
 
 # 6回の試行（関節×方向）
 TRIAL_COUNT: int = 6
@@ -34,9 +34,6 @@ SAFE_SCORE_NORMAL: float = 1.0
 SAFE_SCORE_WARN: float = 0.5
 SAFE_SCORE_ERROR: float = 0.0
 DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
-
-# 転倒判定
-FALLEN_THRESHOLD_DEG: float = 20.0
 
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True

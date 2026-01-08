@@ -136,7 +136,7 @@ def _extract_probs(text: str) -> Optional[Dict[str, float]]:
         return None
 
     upper = raw.upper()
-    m = re.search(r"\b(NONE|BURIED|TRAPPED|TANGLED|MALFUNCTION|FALLEN)\b", upper)
+    m = re.search(r"\b(NONE|BURIED|TRAPPED|TANGLED|MALFUNCTION)\b", upper)
     if m and "{" not in raw:
         lab = m.group(1)
         return {k: (1.0 if k == lab else 0.0) for k in _LABELS}
@@ -164,7 +164,7 @@ def _extract_probs(text: str) -> Optional[Dict[str, float]]:
         # JSONとして壊れていても、ラベル:数値 を汎用的に抽出する（出力健全性チェックの一環）
         # 例: NONE:0.1, "BURIED": 0.2, MALFUNCTION = 0.7 など
         pair_re = re.compile(
-            r"(?i)(?:\b|\")(?P<label>NONE|BURIED|TRAPPED|TANGLED|MALFUNCTION|FALLEN)(?:\b|\")\s*[:=]\s*(?P<val>-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
+            r"(?i)(?:\b|\")(?P<label>NONE|BURIED|TRAPPED|TANGLED|MALFUNCTION)(?:\b|\")\s*[:=]\s*(?P<val>-?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?)"
         )
         for m2 in pair_re.finditer(raw):
             lab = (m2.group("label") or "").strip().upper()
@@ -309,8 +309,6 @@ class LLMAnalyzer:
             "leg_id": leg.leg_id,
             "spot_can": _safe_float(leg.spot_can, 0.5),
             "drone_can": _safe_float(leg.drone_can, 0.5),
-            "fallen": bool(getattr(leg, "fallen", False)),
-            "fallen_probability": _safe_float(getattr(leg, "fallen_probability", 0.0), 0.0),
             "p_drone": {k: _safe_float(v, 0.0) for k, v in dict(leg.p_drone).items()},
             "fallback_rule_probs": {k: _safe_float(v, 0.0) for k, v in dict(fallback).items()},
         }
@@ -367,8 +365,6 @@ class LLMAnalyzer:
             "出力は JSONオブジェクトのみ（説明文やコードブロック禁止）。\n"
             "各ラベルの値は0..1の実数、合計は1.0に正規化してください。\n\n"
             "判断の基本方針（重要）:\n"
-            "- fallen=true の場合でも、脚の原因（BURIED/TRAPPED/TANGLED/MALFUNCTION）推定を優先し、FALLENは大きくしすぎない\n"
-            "- fallen=false の場合、FALLEN確率は極小（例: 0.0〜0.02）\n"
             "- spot_malfunction_flag_any=1 は MALFUNCTION の強い根拠だが、p_droneや他特徴と矛盾する場合は総合判断する\n"
             "- spot_tau_*_ratio が高いことは『外力/拘束で抵抗が大きい』根拠であり、単独で MALFUNCTION の根拠にしない\n"
             "- spot_can が高い(>=0.7)のに drone_can が低い(<=0.3)場合でも、p_drone が BURIED/TRAPPED/TANGLED を強く示すならそれを優先\n"
@@ -423,14 +419,6 @@ class LLMAnalyzer:
 
         if not self._qwen_enabled:
             return False
-
-        # 転倒がほぼ確実なときは、QwenがFALLENに寄りすぎて脚原因を外すことがある。
-        # 仕様ルール（原因推定）を優先するため、前処理としてQwenを抑制する。
-        try:
-            if float(getattr(leg, "fallen_probability", 0.0) or 0.0) >= 0.95:
-                return False
-        except Exception:
-            pass
 
         # 仕様上: 試行が揃ってからで十分（毎trialで重い推論をしない）
         trials_ready = len(getattr(leg, "trials", []) or []) >= int(config.TRIAL_COUNT)
@@ -529,7 +517,6 @@ class LLMAnalyzer:
                 "TRAPPED": 0.01,
                 "TANGLED": 0.01,
                 "MALFUNCTION": 0.02,
-                "FALLEN": 0.01,
             }
             leg.p_llm = dist
             leg.cause_final = "NONE"
@@ -547,7 +534,6 @@ class LLMAnalyzer:
                 "TRAPPED": 0.03,
                 "TANGLED": 0.03,
                 "MALFUNCTION": 0.05,
-                "FALLEN": 0.01,
             }
             leg.p_llm = dist
             leg.cause_final = "NONE"
@@ -565,7 +551,6 @@ class LLMAnalyzer:
                 "TRAPPED": 0.03,
                 "TANGLED": 0.03,
                 "MALFUNCTION": 0.05,
-                "FALLEN": 0.01,
             }
             leg.p_llm = dist
             leg.cause_final = "NONE"
@@ -584,7 +569,6 @@ class LLMAnalyzer:
                     "TRAPPED": 0.02,
                     "TANGLED": 0.02,
                     "MALFUNCTION": 0.89,
-                    "FALLEN": 0.01,
                 }
                 leg.p_llm = dist
                 leg.cause_final = "MALFUNCTION"
@@ -599,24 +583,45 @@ class LLMAnalyzer:
                     "TRAPPED": 0.02,
                     "TANGLED": 0.02,
                     "MALFUNCTION": 0.89,
-                    "FALLEN": 0.01,
                 }
                 leg.p_llm = dist
                 leg.cause_final = "MALFUNCTION"
                 return dist
 
             max_cause = max((v, k) for k, v in p_drone.items() if k != "NONE")[1]
+
+            # 注意:
+            # 以前はトルク比で BURIED/TRAPPED を寄せる処理を入れていたが、
+            # Spotの動作指令が環境で変わらない前提では誤作動しやすい。
+            # ここでは Drone側の拘束原因推定(p_drone)をそのまま採用する。
             dist = {
                 "NONE": 0.02,
                 "BURIED": 0.02,
                 "TRAPPED": 0.02,
                 "TANGLED": 0.02,
                 "MALFUNCTION": 0.02,
-                "FALLEN": 0.01,
             }
             dist[max_cause] = 0.89
             leg.p_llm = dist
             leg.cause_final = max_cause
+            return dist
+
+        # ルール③: 片方が高く片方が低い → 動かない、原因=MALFUNCTION
+        # 仕様.txt Step7 に準拠。
+        # 注意: ここでの MALFUNCTION は「外部観測と自己診断が強く矛盾する」状況を指し、
+        # 追加のフラグが無くても成立しうる。
+        if (spot_can >= 0.7 and drone_can <= 0.3) or (spot_can <= 0.3 and drone_can >= 0.7):
+            leg.movement_result = "動かない"
+            leg.p_can = (spot_can + drone_can) / 2
+            dist = {
+                "NONE": 0.02,
+                "BURIED": 0.02,
+                "TRAPPED": 0.02,
+                "TANGLED": 0.02,
+                "MALFUNCTION": 0.89,
+            }
+            leg.p_llm = dist
+            leg.cause_final = "MALFUNCTION"
             return dist
 
         # ルール④: 中間が混ざる → 一部動く、原因= p_drone の最大
@@ -629,7 +634,6 @@ class LLMAnalyzer:
             "TRAPPED": 0.05,
             "TANGLED": 0.05,
             "MALFUNCTION": 0.05,
-            "FALLEN": 0.01,
         }
         dist[max_cause] = 0.69
         leg.p_llm = dist

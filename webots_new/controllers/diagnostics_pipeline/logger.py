@@ -20,7 +20,6 @@ class DiagnosticsLogger:
         session_id: str,
         leg: LegState,
         trial: TrialResult,
-        fallen: bool,
         *,
         stage: str = "finalized",
     ) -> None:
@@ -45,7 +44,6 @@ class DiagnosticsLogger:
             "p_can": leg.p_can,
             "cause_final": leg.cause_final,
             "movement_result": leg.movement_result,
-            "fallen": fallen,
             "trial_ok": trial.ok,
         }
         self.event_writer.append(payload)
@@ -54,8 +52,6 @@ class DiagnosticsLogger:
         record = SessionRecord(
             session_id=session.session_id,
             image_path=session.image_path,
-            fallen=session.fallen,
-            fallen_probability=session.fallen_probability,
             legs={leg_id: leg.snapshot() for leg_id, leg in session.legs.items()},
         )
         self.session_writer.append(record.to_dict())

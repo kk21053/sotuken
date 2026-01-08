@@ -69,7 +69,11 @@ def update_world_file(environments):
     - BURIED: その脚の BURIED_*_* ノード群を表示座標へ、他は非表示
     - TRAPPED: その脚の FOOT_TRAP_* を表示座標へ、他は非表示
     - TANGLED: その脚の FOOT_VINE_* を表示座標へ、他は非表示
-    - MALFUNCTION: 物体配置なし（全て非表示）
+        - MALFUNCTION: 物体配置なし（全て非表示）
+
+        追加:
+        - MALFUNCTION 指定脚がある場合、SPOT の controllerArgs に --malfunction_legs=... を設定する
+            （Spotは scenario.ini を読まず、動作指令も変えず、自己診断出力のみが故障する想定）
     """
     if not WORLD_FILE.exists():
         print(f"警告: ワールドファイルが見つかりません: {WORLD_FILE}")
@@ -83,6 +87,7 @@ def update_world_file(environments):
     # ワールドファイルを読み込み
     content = WORLD_FILE.read_text()
 
+    # 脚ごとの基準座標（SPOTの原点周りの想定座標）
     # 脚ごとの基準座標（SPOTの原点周りの想定座標）
     base_xy = {
         "FL": (0.45, 0.17),
@@ -109,13 +114,11 @@ def update_world_file(environments):
         "RR": (-0.27, -0.17),
     }
 
-    # BURIED(埋没箱) のx位置オーバーライド（RL/RRのみ要望値）
-    buried_center_xy = {
-        "FL": base_xy["FL"],
-        "FR": base_xy["FR"],
-        "RL": (-0.26, base_xy["RL"][1]),
-        "RR": (-0.26, base_xy["RR"][1]),
-    }
+    # BURIED(埋没箱) の中心座標
+    # 基本は脚ごとの基準座標(base_xy)を使うが、後脚は仕様/要望に合わせて x=-0.26 に固定する。
+    buried_center_xy = dict(base_xy)
+    buried_center_xy["RL"] = (-0.26, base_xy["RL"][1])
+    buried_center_xy["RR"] = (-0.26, base_xy["RR"][1])
 
     # TRAPPED(FOOT_TRAP) のx位置オーバーライド（要望に基づく固定）
     trap_xy = {
@@ -137,12 +140,25 @@ def update_world_file(environments):
         if env == "BURIED":
             # ボックス構成要素の座標を個別に設定（RL/RRはx=-0.26に基準を上書き）
             bx, by = buried_center_xy.get(leg_id, (x0, y0))
-            set_translation(f"BURIED_BOTTOM_{leg_id}", bx, by, 0.0)
-            set_translation(f"BURIED_TOP_{leg_id}", bx, by, 0.12)
-            set_translation(f"BURIED_LEFT_{leg_id}", bx - 0.09, by, 0.08)
-            set_translation(f"BURIED_RIGHT_{leg_id}", bx + 0.09, by, 0.08)
-            set_translation(f"BURIED_FRONT_{leg_id}", bx, by + 0.09, 0.08)
-            set_translation(f"BURIED_BACK_{leg_id}", bx, by - 0.09, 0.08)
+            # BURIEDは「脚の動きを物理的に強く制限する」ことが目的。
+            # 底板だけだとSpotが上に乗ってしまうため、元のサイズのまま
+            # 6パーツ（BOTTOM/TOP/LEFT/RIGHT/FRONT/BACK）で囲う。
+            # ※中心座標(bx, by)は維持し、固定オフセットで配置する（座標そのもののチューニングはしない）。
+
+            # 位置（translation）は固定し、形状（厚み/高さ）側で効き具合を調整する。
+            # 旧worldの元配置（bottom中心z=0.0、wall中心z=0.08、top中心z=0.12、offset=0.10）に揃える。
+            offset_xy = 0.10
+            z_wall_center = 0.08
+            z_top_center = 0.12
+
+            # BOTTOM はSpotが上に乗る原因になりやすいので表示しない。
+            # TOP は「抜け（足が囲いから出る）」を抑えるため表示する。
+            # ※膝がTOPに乗ってしまう問題は、TOP側の接触物性（摩擦）で対処する。
+            set_translation(f"BURIED_TOP_{leg_id}", bx, by, z_top_center)
+            set_translation(f"BURIED_LEFT_{leg_id}", bx - offset_xy, by, z_wall_center)
+            set_translation(f"BURIED_RIGHT_{leg_id}", bx + offset_xy, by, z_wall_center)
+            set_translation(f"BURIED_FRONT_{leg_id}", bx, by + offset_xy, z_wall_center)
+            set_translation(f"BURIED_BACK_{leg_id}", bx, by - offset_xy, z_wall_center)
         elif env == "TRAPPED":
             tx, ty = trap_xy.get(leg_id, (x0, y0))
             set_translation(f"FOOT_TRAP_{leg_id}", tx, ty, 0.0)
@@ -150,6 +166,43 @@ def update_world_file(environments):
             vx, vy = vine_xy.get(leg_id, (x0, y0))
             set_translation(f"FOOT_VINE_{leg_id}", vx, vy, 0.05)
         # MALFUNCTION/NONE は配置しない（非表示のまま）
+
+    # MALFUNCTION 指定脚 -> Spot controllerArgs に反映
+    malfunction_legs = [leg_id for leg_id, env in zip(LEG_IDS, environments) if env == "MALFUNCTION"]
+    mal_arg = "--malfunction_legs=" + ",".join(malfunction_legs) if malfunction_legs else ""
+
+    def _set_spot_controller_args(arg: str) -> None:
+        nonlocal content
+        # SPOT の controllerArgs ブロックがある場合は置換/削除
+        if re.search(r"(?s)DEF\s+SPOT\s+Spot\s*\{.*?controllerArgs\s*\[.*?\].*?\}", content):
+            if arg:
+                content = re.sub(
+                    r"(?s)(DEF\s+SPOT\s+Spot\s*\{.*?controllerArgs\s*\[)(.*?)(\].*?\})",
+                    lambda m: m.group(1) + f"\n    \"{arg}\"\n  " + m.group(3),
+                    content,
+                    count=1,
+                )
+            else:
+                content = re.sub(
+                    r"(?s)(DEF\s+SPOT\s+Spot\s*\{.*?)(\s*controllerArgs\s*\[.*?\]\s*)(.*?\})",
+                    r"\1\n\3",
+                    content,
+                    count=1,
+                )
+            return
+
+        # controllerArgs が無い場合は controller 行の直後に挿入（argがある場合のみ）
+        if not arg:
+            return
+        content = re.sub(
+            r'(DEF\s+SPOT\s+Spot\s*\{\s*.*?\s*controller\s+"spot_self_diagnosis"\s*)',
+            r'\1\n  controllerArgs [\n    "' + arg + r'"\n  ]\n',
+            content,
+            count=1,
+            flags=re.DOTALL,
+        )
+
+    _set_spot_controller_args(mal_arg)
 
     # ワールドファイルに書き込み
     WORLD_FILE.write_text(content)

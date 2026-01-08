@@ -34,7 +34,7 @@ except Exception:
 
 ROOT = Path(__file__).resolve().parent
 WORLD = ROOT / "worlds" / "sotuken_world.wbt"
-SET_ENV = ROOT / "set_environment.py"
+SET_ENV = ROOT / "set_environment"
 SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
 BENCH_DIR = ROOT / "benchmarks"
 LOG_DIR = BENCH_DIR / "logs"
