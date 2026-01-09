@@ -291,10 +291,10 @@ class DroneCircularController:
                     # 足先位置（胴体ローカル）
                     x_local, y_local, z_local = _fk_foot_local(leg_id, angles)
 
-                    # 胴体の傾き変化を補正（転倒/傾きで見かけの変位が変わるのを抑える）
-                    x_local, y_local, z_local = _compensate_for_body_tilt(
-                        x_local, y_local, z_local, delta_roll, delta_pitch
-                    )
+                    # 注意:
+                    # ここで計算する足先位置はFK由来の「胴体ローカル座標」なので、
+                    # 胴体の傾き(delta_roll/pitch)で回転補正すると座標系が二重補正になり、
+                    # 混在ケースで end_disp が過大になることがある。
 
                     if state["init_foot"] is None:
                         state["init_foot"] = (x_local, y_local, z_local)

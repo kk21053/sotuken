@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import math
-from statistics import mean, median
+from statistics import median
 from typing import Dict, List, Sequence, Tuple
 
 from . import config
@@ -45,24 +45,37 @@ class DroneObservationAggregator:
         base_orientations: Sequence[Tuple[float, float, float]],
         base_positions: Sequence[Vector3],
     ) -> None:
-        # 1) 関節角度の変化量 → drone_can_raw
+        # 1) 関節角度の変化量
         reduced = self._reduce_joint_series(joint_angles, trial.trial_index)
         delta_theta = (max(reduced) - min(reduced)) if reduced else 0.0
-        raw = clamp(delta_theta / config.DELTA_THETA_REF_DEG)
+
+        # 2) end_position はコントローラ側で「胴体ローカルの変位（FK差分）」として生成される。
+        #    そのため、base_positions による補正は不要で、むしろ座標系の不一致で end_disp を
+        #    極端に増幅して誤判定を招くことがある。
+        end_positions_rel = list(end_positions)
+
+        # 3) 特徴量（末端の移動など）
+        raw_angle = clamp(delta_theta / config.DELTA_THETA_REF_DEG)
+        features = self._build_features(delta_theta, raw_angle, end_positions_rel)
+        self._feature_history[leg.leg_id].append(features)
+        trial.features = dict(features)
+
+        # 4) drone_can_raw: 「関節が動いた」だけでは足先が動かないケースがある。
+        #    末端移動量も加味して「動ける確率」にする。
+        raw_disp = clamp(float(features.get("end_disp", 0.0)) / max(config.EPSILON, config.END_DISP_REF_M))
+        raw = clamp(0.20 * raw_angle + 0.80 * raw_disp)
 
         self._raw_scores[leg.leg_id].append(raw)
         trial.drone_can_raw = raw
 
-        # 2) 特徴量（末端の移動など）
-        features = self._build_features(delta_theta, raw, end_positions)
-        self._feature_history[leg.leg_id].append(features)
-        trial.features = dict(features)
+        # 5) drone_can（頑健な集計→シグモイド）
+        # 混在ケースでは一部の試行だけ end_disp/delta_theta が小さくなりやすく、単純平均だと
+        # 本来の傾向を打ち消してしまう。中央値を使って外れ値に強くする。
+        samples = self._raw_scores[leg.leg_id][: config.TRIAL_COUNT]
+        drone_raw_agg = median(samples) if samples else 0.0
+        leg.drone_can = self._sigmoid(drone_raw_agg)
 
-        # 3) drone_can（平均→シグモイド）
-        drone_raw_avg = mean(self._raw_scores[leg.leg_id][: config.TRIAL_COUNT]) if self._raw_scores[leg.leg_id] else 0.0
-        leg.drone_can = self._sigmoid(drone_raw_avg)
-
-        # 4) 拘束原因の確率分布
+        # 6) 拘束原因の確率分布
         dist_now = self._estimate_cause_distribution(features)
         acc = self._cause_accumulator[leg.leg_id]
         for k, v in dist_now.items():
@@ -155,6 +168,7 @@ class DroneObservationAggregator:
             "end_disp_p75": _p75([f["end_disp"] for f in history]),
             "end_disp_max": max([f["end_disp"] for f in history]),
             "delta_theta_deg_max": max([f["delta_theta_deg"] for f in history]),
+            "reversals_p75": _p75([f["reversals"] for f in history]),
             "reversals_max": max([f["reversals"] for f in history]),
             "path_straightness_max": max([f["path_straightness"] for f in history]),
         }
@@ -175,15 +189,26 @@ class DroneObservationAggregator:
         # robust 集計がある場合の補助統計（なければ現値を使う）
         end_disp_p75 = float(f.get("end_disp_p75", end_disp))
         reversals_max = float(f.get("reversals_max", reversals))
+        reversals_p75 = float(f.get("reversals_p75", reversals))
         path_straightness_max = float(f.get("path_straightness_max", path_straightness))
 
         # ---- 汎用的な閾値ベース（仕様の簡潔版） ----
         # 旧版ベースだが、BURIEDは「角度変化が極小」という条件が本質なので、角度閾値を厳しめにする。
         TRAPPED_ANGLE_MIN = 1.25
+        TANGLED_ANGLE_MIN = 1.00
         BURIED_ANGLE_THRESHOLD = 0.75
         TRAPPED_DISPLACEMENT_MAX = 0.012
         BURIED_DISPLACEMENT_THRESHOLD = 0.006
         NORMAL_DISPLACEMENT_MIN = 0.015
+
+        # 「埋没」と「罠で固定」の見分け用（汎用的・観測ベース）
+        # - BURIED: ほぼ移動できず、末端位置が細かく揺れて往復(反転)が増えやすい
+        # - TRAPPED: ほぼ移動できないが、揺れ(反転)は少ないことが多い
+        BURIED_REVERSALS_MIN = 8.0
+        TANGLED_REVERSALS_MAX = 2.0
+
+        # robust集計がある場合でも、ここでは median値(reversals)を基本に使う
+        reversals_med = reversals
 
         # TANGLED の兆候（TRAPPED分岐でも使う）
         t_rev = clamp(reversals_max / 3.0)
@@ -201,22 +226,70 @@ class DroneObservationAggregator:
 
         tangled_hint = clamp(0.60 * t_rev + 0.40 * t_straight)
 
-        # BURIED:
-        # Spotが環境で指令を変えない前提では、BURIEDは「物理的に関節がほとんど動けない」状態として現れる。
-        # そのため、関節角度変化(delta_theta)の極小を主根拠にする。
-        #
-        # 注意（robust集計時の外れ値対策）:
-        # trial の一部で観測ノイズ（関節角フレーム欠落/NaN混入/基準ズレ等）が起きると
-        # delta_theta_deg_max が過大になり、実際は拘束されているのに BURIED 判定が落ちる。
-        # robust 集計がある場合は median（delta_theta_deg）を優先して BURIED を判定する。
-        delta_theta_for_buried = delta_theta_deg if "delta_theta_deg_max" in f else delta_theta_peak
-        if delta_theta_for_buried < BURIED_ANGLE_THRESHOLD:
+        # TANGLED（明確な兆候）:
+        # - 末端位置がそこそこ動く / 関節角がそこそこ動く
+        # - ただし「反転が多い」場合はノイズ(微小揺れ)の可能性が高いので除外する
+        tangled_obvious = (
+            (end_disp_peak >= BURIED_DISPLACEMENT_THRESHOLD or delta_theta_peak >= TANGLED_ANGLE_MIN)
+            and (reversals_med <= TANGLED_REVERSALS_MAX)
+            and (end_disp_p75 < NORMAL_DISPLACEMENT_MIN)
+        )
+        if tangled_obvious:
+            return normalize_distribution(
+                {
+                    "NONE": 0.05,
+                    "BURIED": 0.03,
+                    "TRAPPED": 0.06,
+                    "TANGLED": 0.83,
+                    "MALFUNCTION": 0.03,
+                }
+            )
+
+        # BURIED の強い兆候（混在ケースの誤検知対策）:
+        # - 末端はほとんど移動しないが、細かい往復(反転)が多い
+        #   → TRAPPED/TANGLED の補助(tangled_hint)で TANGLED に引っ張られないように先に確定する。
+        # 反転(reversals)は微小変位でスパイクしやすい。
+        # p75だけだと単発のスパイクでBURIEDが誤発火するため、中央値も併せて要求する。
+        buried_by_reversals = (
+            (end_disp_p75 < TRAPPED_DISPLACEMENT_MAX)
+            and (reversals_p75 >= BURIED_REVERSALS_MIN)
+            and (reversals_med >= (BURIED_REVERSALS_MIN / 2.0))
+        )
+        if buried_by_reversals:
             return normalize_distribution(
                 {
                     "NONE": 0.05,
                     "BURIED": 0.85,
-                    "TRAPPED": 0.03,
+                    "TRAPPED": 0.04,
                     "TANGLED": 0.03,
+                    "MALFUNCTION": 0.03,
+                }
+            )
+
+        # BURIED / TRAPPED の分岐:
+        # - 角度変化が小さく、末端移動も小さい → 強い拘束
+        #   ここで「反転(揺れ)」の大小で BURIED と TRAPPED を分ける。
+        delta_theta_for_buried = delta_theta_deg if "delta_theta_deg_max" in f else delta_theta_peak
+        stuck_hard = (delta_theta_for_buried < BURIED_ANGLE_THRESHOLD) and (end_disp_p75 < BURIED_DISPLACEMENT_THRESHOLD)
+        if stuck_hard:
+            if reversals_med >= BURIED_REVERSALS_MIN:
+                return normalize_distribution(
+                    {
+                        "NONE": 0.05,
+                        "BURIED": 0.85,
+                        "TRAPPED": 0.03,
+                        "TANGLED": 0.03,
+                        "MALFUNCTION": 0.03,
+                    }
+                )
+
+            # 反転が少ないのに強く拘束されている場合は TRAPPED 寄り
+            return normalize_distribution(
+                {
+                    "NONE": 0.05,
+                    "BURIED": 0.08,
+                    "TRAPPED": 0.80,
+                    "TANGLED": 0.04,
                     "MALFUNCTION": 0.03,
                 }
             )

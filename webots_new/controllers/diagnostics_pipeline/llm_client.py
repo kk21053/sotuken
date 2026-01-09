@@ -574,21 +574,16 @@ class LLMAnalyzer:
                 leg.cause_final = "MALFUNCTION"
                 return dist
 
-            # トルクがほぼ出ていないなら、拘束よりも故障（指示が効かない）を優先
-            # 閾値は保守的に小さめ（0.2）にする。
-            if spot_tau_max_ratio is not None and spot_tau_max_ratio <= 0.2:
-                dist = {
-                    "NONE": 0.02,
-                    "BURIED": 0.02,
-                    "TRAPPED": 0.02,
-                    "TANGLED": 0.02,
-                    "MALFUNCTION": 0.89,
-                }
-                leg.p_llm = dist
-                leg.cause_final = "MALFUNCTION"
-                return dist
+            # 混在環境では、機体姿勢や他脚の影響で Spot のトルク比が小さく出ることがある。
+            # トルク比だけで MALFUNCTION に確定させると誤分類が増えるため、ここでは使わない。
 
-            max_cause = max((v, k) for k, v in p_drone.items() if k != "NONE")[1]
+            # 仕様上の拘束原因（BURIED/TRAPPED/TANGLED）を優先して選ぶ。
+            # MALFUNCTION は ①③ か、Spotの故障フラグで扱う。
+            cand = {k: float(v) for k, v in p_drone.items() if k in {"BURIED", "TRAPPED", "TANGLED"}}
+            if cand:
+                max_cause = max(cand.items(), key=lambda kv: kv[1])[0]
+            else:
+                max_cause = "TRAPPED"
 
             # 注意:
             # 以前はトルク比で BURIED/TRAPPED を寄せる処理を入れていたが、

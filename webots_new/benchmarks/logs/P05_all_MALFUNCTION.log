@@ -2,9 +2,9 @@ INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.p
 INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py
 [spot_new] malfunction_legs=['FL', 'FR', 'RL', 'RR']
 [drone_new] camera device found: camera
-[drone_new] init session=drone_20260108_204841 timestep=16ms
+[drone_new] init session=drone_20260109_025740 timestep=16ms
 [drone_new] expected={'FL': 'MALFUNCTION', 'FR': 'MALFUNCTION', 'RL': 'MALFUNCTION', 'RR': 'MALFUNCTION'}
-[spot_new] init session=spot_20260108_204842 timestep=16ms
+[spot_new] init session=spot_20260109_025741 timestep=16ms
 [spot_new] ===== FL start =====
 [spot_new] FL trial 1/6 dir=+ joint=knee
 [drone_new] start FL trial 1/6 dir=+
@@ -130,7 +130,7 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  RR trial 6/6 frames=24 spot_raw=0.000
 [drone_new] progress RR 6/6
 [drone_new] all trials done -> finalize
-[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260108_204841.png
+[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260109_025740.png
 [spot_new] diagnosis complete
 INFO: spot_self_diagnosis: Terminating.
 INFO: drone_circular_controller: Terminating.
