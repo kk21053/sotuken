@@ -7,7 +7,9 @@
 # オプション:
 #   --stream            # GUIが出せない環境向け。Webotsのストリーミングを有効化
 #   --stream-port <p>   # ストリーミングポート番号（省略時はWebotsの既定値）
-#   --gui-console       # Webots内のGUIコンソールを使用（下部へドッキングはWebots側レイアウト依存）
+#   --gui-console       # 互換用（非推奨）: Webots内のGUIコンソールを使わず、従来通り起動するだけ
+#                     # ※Webots内コンソールの「位置/サイズ」はCLIから確実に制御できないため、
+#                     #   出力は常に端末(=VS Codeなら画面下部)へ出す。
 
 import os
 import subprocess
@@ -71,11 +73,12 @@ def main() -> None:
             cmd.extend(["--stream-port", str(stream_port)])
         print("ストリーミングを有効化して起動します。（ブラウザで表示可能）")
 
-    # 既定でGUIコンソールを使わず、端末へ出力（画面占有を避ける）
+    # コントローラの出力は常に端末へ出す（VS Codeの統合ターミナルなら画面下部に表示される）
+    # Webots内GUIコンソールのドッキング位置/サイズは、ユーザ環境のレイアウト設定に依存し
+    # CLIからの確実な制御ができないため。
     if use_gui_console:
-        pass
-    else:
-        cmd.extend(["--stdout", "--stderr"])  # コントローラの出力を端末にリダイレクト
+        print("注意: --gui-console は非推奨です。出力は端末へリダイレクトします（画面下部）。")
+    cmd.extend(["--stdout", "--stderr"])
 
     cmd.append(str(WORLD))
 

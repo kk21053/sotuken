@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import configparser
 import math
 import os
 import sys
@@ -28,7 +27,6 @@ from controller import Supervisor
 
 
 CONTROLLERS_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = CONTROLLERS_ROOT.parent / "config" / "scenario.ini"
 
 if str(CONTROLLERS_ROOT) not in sys.path:
     sys.path.append(str(CONTROLLERS_ROOT))
@@ -102,9 +100,9 @@ class SpotSelfDiagnosis:
         self.sensors: Dict[str, List] = {}
         self._init_devices()
 
-        self.scenario = self._load_scenario()
-
         self._queue: List[str] = []
+
+        self._malfunction_legs = self._parse_malfunction_legs(sys.argv[1:])
 
         # 起動直後はセンサ値が NaN のことがあるので、少し step して安定させる
         for _ in range(50):
@@ -113,28 +111,25 @@ class SpotSelfDiagnosis:
 
         session_id = f"spot_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         print(f"[spot_new] init session={session_id} timestep={self.time_step}ms")
-        print(
-            f"[spot_new] env FL={self._leg_env('FL')} FR={self._leg_env('FR')} RL={self._leg_env('RL')} RR={self._leg_env('RR')}"
-        )
+
+    def _parse_malfunction_legs(self, argv: List[str]) -> set[str]:
+        legs: set[str] = set()
+        for a in argv:
+            if not isinstance(a, str):
+                continue
+            if a.startswith("--malfunction_legs="):
+                raw = a.split("=", 1)[1].strip()
+                if not raw:
+                    continue
+                for part in raw.split(","):
+                    leg = part.strip().upper()
+                    if leg in diag_config.LEG_IDS:
+                        legs.add(leg)
+        if legs:
+            print(f"[spot_new] malfunction_legs={sorted(legs)}")
+        return legs
 
     # ---- config / devices ----
-
-    def _load_scenario(self) -> Dict[str, str]:
-        cfg = configparser.ConfigParser()
-        try:
-            cfg.read(CONFIG_PATH)
-            return {
-                "fl_environment": cfg.get("DEFAULT", "fl_environment", fallback="NONE"),
-                "fr_environment": cfg.get("DEFAULT", "fr_environment", fallback="NONE"),
-                "rl_environment": cfg.get("DEFAULT", "rl_environment", fallback="NONE"),
-                "rr_environment": cfg.get("DEFAULT", "rr_environment", fallback="NONE"),
-            }
-        except Exception as exc:
-            print(f"[spot_new] warn: scenario.ini read failed: {exc}")
-            return {}
-
-    def _leg_env(self, leg_id: str) -> str:
-        return self.scenario.get(f"{leg_id.lower()}_environment", "NONE").strip().upper()
 
     def _init_devices(self) -> None:
         for leg_id, motor_names in LEG_MOTOR_NAMES.items():
@@ -278,12 +273,9 @@ class SpotSelfDiagnosis:
         else:
             vel = 0.0
 
-        # torque
-        if tau_meas and tau_limit > 1e-6:
-            mean_abs = sum(abs(x) for x in tau_meas) / len(tau_meas)
-            tau = max(0.0, min(1.0, 1.0 - (mean_abs / tau_limit)))
-        else:
-            tau = 1.0
+        # torque は「抵抗が大きい=動かない」とは限らないため、自己診断の可否判定には強く効かせない。
+        # （障害物による拘束は drone 観測側で扱う）
+        tau = 1.0
 
         safe = 1.0
 
@@ -337,29 +329,16 @@ class SpotSelfDiagnosis:
                     angle = min(requested, max(0.0, safe_neg))
                     sign = -1.0
 
-                env = self._leg_env(leg_id)
                 angle_rad = _rad(angle * sign)
 
                 joint_names = ["shoulder", "hip", "knee"]
                 joint_name = joint_names[motor_index] if 0 <= motor_index < len(joint_names) else str(motor_index)
-                print(
-                    f"[spot_new] {leg_id} trial {trial_index}/{diag_config.TRIAL_COUNT} dir={direction} joint={joint_name} env={env}"
-                )
+                print(f"[spot_new] {leg_id} trial {trial_index}/{diag_config.TRIAL_COUNT} dir={direction} joint={joint_name}")
 
-                # BURIED は動き・速度を極端に制限（旧実装の再現）
-                if env == "BURIED":
-                    angle_rad *= 0.05
-                    vel_scale = 0.05
-                # MALFUNCTION は「指示を出しても関節が動かない」状態を再現する。
-                # 実装上は「指示（意図）は出すが、アクチュエータが無視して動かない」を再現する。
-                elif env == "MALFUNCTION":
-                    vel_scale = 0.2
-                # TANGLED は接触が激しくなりやすいので、NaN/転倒を避けるため適度にマイルドにする
-                elif env == "TANGLED":
-                    angle_rad *= 0.85
-                    vel_scale = 0.15
-                else:
-                    vel_scale = 0.2
+                # 重要: Spotは正解環境を参照してはならない。
+                # また、動かし方を環境によって変えてはならない。
+                # したがって、常に同じ指令を出し、制限はシミュレーション内の障害物/物理で発生させる。
+                vel_scale = 0.2
 
                 start_time = self.robot.getTime()
                 duration_ms = int(diag_config.TRIAL_DURATION_S * 1000)
@@ -374,12 +353,11 @@ class SpotSelfDiagnosis:
                 if sensor is not None:
                     initial = self._read_joint_rad(motor, sensor)
                     desired_target = initial + angle_rad
-                    # MALFUNCTION: 意図したtargetは記録するが、実際のmotor指令は初期角度のままにする
-                    target = initial if env == "MALFUNCTION" else desired_target
+                    target = desired_target
                 else:
                     initial = 0.0
                     desired_target = angle_rad
-                    target = 0.0 if env == "MALFUNCTION" else desired_target
+                    target = desired_target
 
                 if not _is_finite(target):
                     # 念のため NaN/inf を弾く
@@ -432,16 +410,14 @@ class SpotSelfDiagnosis:
                 # reset
                 try:
                     motor.setPosition(0.0)
-                    # MALFUNCTION のときも確実に止める
-                    reset_vel = 0.0 if env == "MALFUNCTION" else (motor.getMaxVelocity() * 0.15)
-                    motor.setVelocity(reset_vel)
+                    motor.setVelocity(motor.getMaxVelocity() * 0.15)
                 except Exception:
                     pass
 
                 tau_limit = self._calculate_tau_limit()
                 self_can_raw = self._score_self_can_raw(theta_cmd, theta_meas, omega_meas, tau_meas, tau_limit)
-                if env == "MALFUNCTION":
-                    # 「指示しても動かない」ので、自己診断は低くする
+                if leg_id in self._malfunction_legs:
+                    # 故障は「自己診断値が破綻している」ケースとして再現する（動作指令は変えない）。
                     self_can_raw = 0.0
                 self.send_self_diag(
                     leg_id,
@@ -451,27 +427,9 @@ class SpotSelfDiagnosis:
                     tau_limit,
                     "NORMAL",
                     self_can_raw,
-                    malfunction_flag=1 if env == "MALFUNCTION" else 0,
+                    malfunction_flag=0,
                 )
                 print(f"[spot_new] {leg_id} trial {trial_index}/{diag_config.TRIAL_COUNT} done self_can_raw={self_can_raw:.3f}")
-
-                # MALFUNCTION の確認用ログ（指示Δと実測Δ）
-                if env == "MALFUNCTION":
-                    try:
-                        cmd_delta_deg = float(angle * sign)
-                    except Exception:
-                        cmd_delta_deg = 0.0
-                    if theta_meas:
-                        actual_delta_deg = float(theta_meas[-1] - theta_meas[0])
-                        print(
-                            f"[spot_new] MALFUNCTION_CHECK leg={leg_id} trial={trial_index} joint={joint_name} "
-                            f"cmd_delta_deg={cmd_delta_deg:.3f} actual_delta_deg={actual_delta_deg:.3f}"
-                        )
-                    else:
-                        print(
-                            f"[spot_new] MALFUNCTION_CHECK leg={leg_id} trial={trial_index} joint={joint_name} "
-                            f"cmd_delta_deg={cmd_delta_deg:.3f} actual_delta_deg=NaN (no sensor samples)"
-                        )
 
                 # 重要: customData は同一ステップ内の最後の setSFString が勝つ。
                 # ここで step せず次の TRIGGER を送ると SELF_DIAG が上書きされ、

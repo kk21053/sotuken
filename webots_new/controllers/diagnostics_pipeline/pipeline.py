@@ -209,8 +209,6 @@ class DiagnosticsPipeline:
 				buf.base_orientations,
 				buf.base_positions,
 			)
-			self.session.fallen = self.session.fallen or self.drone.fallen
-			self.session.fallen_probability = max(self.session.fallen_probability, self.drone.fallen_probability)
 		except Exception as exc:
 			print(f"[pipeline_new] warning: drone.process_trial failed: {exc}")
 
@@ -244,7 +242,6 @@ class DiagnosticsPipeline:
 					self.session.session_id,
 					leg,
 					trial,
-					self.session.fallen,
 					stage="features_ready",
 				)
 			except Exception as exc:
@@ -298,7 +295,6 @@ class DiagnosticsPipeline:
 					self.session.session_id,
 					leg,
 					trial,
-					self.session.fallen,
 					stage="finalized",
 				)
 			except Exception as exc:
@@ -312,7 +308,6 @@ class DiagnosticsPipeline:
 					self.session.session_id,
 					leg,
 					trial,
-					self.session.fallen,
 					stage="finalized",
 				)
 			except Exception:
@@ -321,11 +316,6 @@ class DiagnosticsPipeline:
 		return trial
 
 	def finalize(self) -> SessionState:
-		try:
-			self.session.fallen = self.drone.fallen
-			self.session.fallen_probability = self.drone.fallen_probability
-		except Exception:
-			pass
 		self.logger.log_session(self.session)
 		return self.session
 

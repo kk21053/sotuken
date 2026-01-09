@@ -80,7 +80,7 @@ def _fmt_dist(dist: dict | None, colorize: bool = False) -> str:
         return "{}"
     try:
         # ラベル順は固定のほうが見やすい（LEG_IDSとは別のCAUSEラベル順）
-        keys = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN"]
+        keys = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION"]
         top = _top_key(dist) if colorize else None
         parts = []
         for k in keys:

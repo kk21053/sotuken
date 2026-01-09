@@ -55,10 +55,6 @@ class LegState:
     # シナリオの期待値（正解率表示に使う）
     expected_cause: str = "NONE"
 
-    # 転倒
-    fallen: bool = False
-    fallen_probability: float = 0.0
-
     trials: List[TrialResult] = field(default_factory=list)
 
     def snapshot(self) -> "LegStatus":
@@ -74,8 +70,6 @@ class LegState:
             cause_rule=self.cause_rule,
             p_rule=dict(self.p_rule) if self.p_rule else None,
             expected_cause=self.expected_cause,
-            fallen=self.fallen,
-            fallen_probability=self.fallen_probability,
         )
 
 
@@ -83,8 +77,6 @@ class LegState:
 class SessionState:
     session_id: str
     image_path: Optional[str] = None
-    fallen: bool = False
-    fallen_probability: float = 0.0
     legs: Dict[str, LegState] = field(default_factory=dict)
 
     def ensure_leg(self, leg_id: str) -> LegState:
@@ -106,16 +98,12 @@ class LegStatus:
     cause_rule: Optional[str] = None
     p_rule: Optional[Dict[str, float]] = None
     expected_cause: str = "NONE"
-    fallen: bool = False
-    fallen_probability: float = 0.0
 
 
 @dataclass
 class SessionRecord:
     session_id: str
     image_path: Optional[str]
-    fallen: bool
-    fallen_probability: float
     legs: Dict[str, LegStatus]
 
     def to_dict(self) -> Dict:
@@ -123,8 +111,6 @@ class SessionRecord:
             "timestamp": time.time(),
             "session_id": self.session_id,
             "image_path": self.image_path,
-            "fallen": self.fallen,
-            "fallen_probability": self.fallen_probability,
             "legs": {
                 leg_id: {
                     "spot_can": leg.spot_can,
@@ -137,8 +123,6 @@ class SessionRecord:
                     "cause_rule": leg.cause_rule,
                     "p_rule": leg.p_rule,
                     "expected_cause": leg.expected_cause,
-                    "fallen": leg.fallen,
-                    "fallen_probability": leg.fallen_probability,
                 }
                 for leg_id, leg in self.legs.items()
             },

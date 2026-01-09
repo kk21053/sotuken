@@ -6,7 +6,7 @@ from typing import Tuple
 LEG_IDS: Tuple[str, ...] = ("FL", "FR", "RL", "RR")
 
 # 拘束原因ラベル
-CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION", "FALLEN")
+CAUSE_LABELS: Tuple[str, ...] = ("NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION")
 
 # 6回の試行（関節×方向）
 TRIAL_COUNT: int = 6
@@ -35,8 +35,8 @@ SAFE_SCORE_WARN: float = 0.5
 SAFE_SCORE_ERROR: float = 0.0
 DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
 
-# 転倒判定
-FALLEN_THRESHOLD_DEG: float = 20.0
+# Drone観測の末端移動量の正規化（経験的に、正常時は end_disp が 0.03m 以上になりやすい）
+END_DISP_REF_M: float = 0.03
 
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True
