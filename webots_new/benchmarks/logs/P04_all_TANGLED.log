@@ -1,9 +1,9 @@
 INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.py
 INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py
 [drone_new] camera device found: camera
-[drone_new] init session=drone_20260109_025731 timestep=16ms
+[drone_new] init session=drone_20260116_053049 timestep=16ms
 [drone_new] expected={'FL': 'TANGLED', 'FR': 'TANGLED', 'RL': 'TANGLED', 'RR': 'TANGLED'}
-[spot_new] init session=spot_20260109_025731 timestep=16ms
+[spot_new] init session=spot_20260116_053049 timestep=16ms
 [spot_new] ===== FL start =====
 [spot_new] FL trial 1/6 dir=+ joint=knee
 [drone_new] start FL trial 1/6 dir=+
@@ -129,7 +129,7 @@ INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_
 [drone_new] done  RR trial 6/6 frames=24 spot_raw=0.395
 [drone_new] progress RR 6/6
 [drone_new] all trials done -> finalize
-[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260109_025731.png
+[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260116_053049.png
 [spot_new] diagnosis complete
 INFO: spot_self_diagnosis: Terminating.
 INFO: drone_circular_controller: Terminating.

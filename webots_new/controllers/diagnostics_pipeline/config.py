@@ -35,9 +35,6 @@ SAFE_SCORE_WARN: float = 0.5
 SAFE_SCORE_ERROR: float = 0.0
 DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
 
-# Drone観測の末端移動量の正規化（経験的に、正常時は end_disp が 0.03m 以上になりやすい）
-END_DISP_REF_M: float = 0.03
-
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True
 

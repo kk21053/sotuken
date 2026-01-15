@@ -73,7 +73,7 @@ def update_world_file(environments):
 
         追加:
         - MALFUNCTION 指定脚がある場合、SPOT の controllerArgs に --malfunction_legs=... を設定する
-            （Spotは scenario.ini を読まず、動作指令も変えず、自己診断出力のみが故障する想定）
+            （Spotコントローラ側で該当脚の動作指令を無効化し、RoboPoseからも故障が観測できるようにする）
     """
     if not WORLD_FILE.exists():
         print(f"警告: ワールドファイルが見つかりません: {WORLD_FILE}")

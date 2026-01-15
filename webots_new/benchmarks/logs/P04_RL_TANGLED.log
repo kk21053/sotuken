@@ -1,136 +1,135 @@
 INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.py
-INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py --radius=3.5 --height=3.0 --period=25.0 --center-def=SPOT
+INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py
 [drone_new] camera device found: camera
-[drone_new] init session=drone_20260108_093531 timestep=16ms
+[drone_new] init session=drone_20260116_053154 timestep=16ms
 [drone_new] expected={'FL': 'NONE', 'FR': 'NONE', 'RL': 'TANGLED', 'RR': 'NONE'}
-[spot_new] init session=spot_20260108_093531 timestep=16ms
-[spot_new] env FL=NONE FR=NONE RL=TANGLED RR=NONE
+[spot_new] init session=spot_20260116_053155 timestep=16ms
 [spot_new] ===== FL start =====
-[spot_new] FL trial 1/6 dir=+ joint=knee env=NONE
+[spot_new] FL trial 1/6 dir=+ joint=knee
 [drone_new] start FL trial 1/6 dir=+
-[spot_new] FL trial 1/6 done self_can_raw=0.883
-[spot_new] FL trial 2/6 dir=- joint=knee env=NONE
-[drone_new] done  FL trial 1/6 frames=24 spot_raw=0.883
+[spot_new] FL trial 1/6 done self_can_raw=0.889
+[spot_new] FL trial 2/6 dir=- joint=knee
+[drone_new] done  FL trial 1/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 1/6
 [drone_new] start FL trial 2/6 dir=-
-[spot_new] FL trial 2/6 done self_can_raw=0.883
-[spot_new] FL trial 3/6 dir=+ joint=hip env=NONE
-[drone_new] done  FL trial 2/6 frames=24 spot_raw=0.883
+[spot_new] FL trial 2/6 done self_can_raw=0.889
+[spot_new] FL trial 3/6 dir=+ joint=hip
+[drone_new] done  FL trial 2/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 2/6
 [drone_new] start FL trial 3/6 dir=+
-[spot_new] FL trial 3/6 done self_can_raw=0.845
-[spot_new] FL trial 4/6 dir=- joint=hip env=NONE
-[drone_new] done  FL trial 3/6 frames=24 spot_raw=0.845
+[spot_new] FL trial 3/6 done self_can_raw=0.889
+[spot_new] FL trial 4/6 dir=- joint=hip
+[drone_new] done  FL trial 3/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 3/6
 [drone_new] start FL trial 4/6 dir=-
-[spot_new] FL trial 4/6 done self_can_raw=0.868
-[spot_new] FL trial 5/6 dir=+ joint=shoulder env=NONE
-[drone_new] done  FL trial 4/6 frames=24 spot_raw=0.868
+[spot_new] FL trial 4/6 done self_can_raw=0.889
+[spot_new] FL trial 5/6 dir=+ joint=shoulder
+[drone_new] done  FL trial 4/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 4/6
 [drone_new] start FL trial 5/6 dir=+
-[spot_new] FL trial 5/6 done self_can_raw=0.828
-[spot_new] FL trial 6/6 dir=- joint=shoulder env=NONE
-[drone_new] done  FL trial 5/6 frames=24 spot_raw=0.828
+[spot_new] FL trial 5/6 done self_can_raw=0.889
+[spot_new] FL trial 6/6 dir=- joint=shoulder
+[drone_new] done  FL trial 5/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 5/6
 [drone_new] start FL trial 6/6 dir=-
-[spot_new] FL trial 6/6 done self_can_raw=0.846
+[spot_new] FL trial 6/6 done self_can_raw=0.889
 [spot_new] ===== FR start =====
-[spot_new] FR trial 1/6 dir=+ joint=knee env=NONE
-[drone_new] done  FL trial 6/6 frames=24 spot_raw=0.846
+[spot_new] FR trial 1/6 dir=+ joint=knee
+[drone_new] done  FL trial 6/6 frames=24 spot_raw=0.889
 [drone_new] progress FL 6/6
 [drone_new] start FR trial 1/6 dir=+
-[spot_new] FR trial 1/6 done self_can_raw=0.773
-[spot_new] FR trial 2/6 dir=- joint=knee env=NONE
-[drone_new] done  FR trial 1/6 frames=24 spot_raw=0.773
+[spot_new] FR trial 1/6 done self_can_raw=0.889
+[spot_new] FR trial 2/6 dir=- joint=knee
+[drone_new] done  FR trial 1/6 frames=24 spot_raw=0.889
 [drone_new] progress FR 1/6
 [drone_new] start FR trial 2/6 dir=-
-[spot_new] FR trial 2/6 done self_can_raw=0.639
-[spot_new] FR trial 3/6 dir=+ joint=hip env=NONE
-[drone_new] done  FR trial 2/6 frames=24 spot_raw=0.639
+[spot_new] FR trial 2/6 done self_can_raw=0.889
+[spot_new] FR trial 3/6 dir=+ joint=hip
+[drone_new] done  FR trial 2/6 frames=24 spot_raw=0.889
 [drone_new] progress FR 2/6
 [drone_new] start FR trial 3/6 dir=+
-[spot_new] FR trial 3/6 done self_can_raw=0.117
-[spot_new] FR trial 4/6 dir=- joint=hip env=NONE
-[drone_new] done  FR trial 3/6 frames=24 spot_raw=0.117
+[spot_new] FR trial 3/6 done self_can_raw=0.367
+[spot_new] FR trial 4/6 dir=- joint=hip
+[drone_new] done  FR trial 3/6 frames=24 spot_raw=0.367
 [drone_new] progress FR 3/6
 [drone_new] start FR trial 4/6 dir=-
-[spot_new] FR trial 4/6 done self_can_raw=0.116
-[spot_new] FR trial 5/6 dir=+ joint=shoulder env=NONE
-[drone_new] done  FR trial 4/6 frames=24 spot_raw=0.116
+[spot_new] FR trial 4/6 done self_can_raw=0.366
+[spot_new] FR trial 5/6 dir=+ joint=shoulder
+[drone_new] done  FR trial 4/6 frames=24 spot_raw=0.366
 [drone_new] progress FR 4/6
 [drone_new] start FR trial 5/6 dir=+
-[spot_new] FR trial 5/6 done self_can_raw=0.483
-[spot_new] FR trial 6/6 dir=- joint=shoulder env=NONE
-[drone_new] done  FR trial 5/6 frames=24 spot_raw=0.483
+[spot_new] FR trial 5/6 done self_can_raw=0.733
+[spot_new] FR trial 6/6 dir=- joint=shoulder
+[drone_new] done  FR trial 5/6 frames=24 spot_raw=0.733
 [drone_new] progress FR 5/6
 [drone_new] start FR trial 6/6 dir=-
-[spot_new] FR trial 6/6 done self_can_raw=0.631
+[spot_new] FR trial 6/6 done self_can_raw=0.881
 [spot_new] ===== RL start =====
-[spot_new] RL trial 1/6 dir=+ joint=knee env=TANGLED
-[drone_new] done  FR trial 6/6 frames=24 spot_raw=0.631
+[spot_new] RL trial 1/6 dir=+ joint=knee
+[drone_new] done  FR trial 6/6 frames=24 spot_raw=0.881
 [drone_new] progress FR 6/6
 [drone_new] start RL trial 1/6 dir=+
-[spot_new] RL trial 1/6 done self_can_raw=0.644
-[spot_new] RL trial 2/6 dir=- joint=knee env=TANGLED
-[drone_new] done  RL trial 1/6 frames=24 spot_raw=0.644
+[spot_new] RL trial 1/6 done self_can_raw=0.870
+[spot_new] RL trial 2/6 dir=- joint=knee
+[drone_new] done  RL trial 1/6 frames=24 spot_raw=0.870
 [drone_new] progress RL 1/6
 [drone_new] start RL trial 2/6 dir=-
-[spot_new] RL trial 2/6 done self_can_raw=0.586
-[spot_new] RL trial 3/6 dir=+ joint=hip env=TANGLED
-[drone_new] done  RL trial 2/6 frames=24 spot_raw=0.586
+[spot_new] RL trial 2/6 done self_can_raw=0.855
+[spot_new] RL trial 3/6 dir=+ joint=hip
+[drone_new] done  RL trial 2/6 frames=24 spot_raw=0.855
 [drone_new] progress RL 2/6
 [drone_new] start RL trial 3/6 dir=+
-[spot_new] RL trial 3/6 done self_can_raw=0.104
-[spot_new] RL trial 4/6 dir=- joint=hip env=TANGLED
-[drone_new] done  RL trial 3/6 frames=24 spot_raw=0.104
+[spot_new] RL trial 3/6 done self_can_raw=0.356
+[spot_new] RL trial 4/6 dir=- joint=hip
+[drone_new] done  RL trial 3/6 frames=24 spot_raw=0.356
 [drone_new] progress RL 3/6
 [drone_new] start RL trial 4/6 dir=-
-[spot_new] RL trial 4/6 done self_can_raw=0.108
-[spot_new] RL trial 5/6 dir=+ joint=shoulder env=TANGLED
-[drone_new] done  RL trial 4/6 frames=24 spot_raw=0.108
+[spot_new] RL trial 4/6 done self_can_raw=0.358
+[spot_new] RL trial 5/6 dir=+ joint=shoulder
+[drone_new] done  RL trial 4/6 frames=24 spot_raw=0.358
 [drone_new] progress RL 4/6
 [drone_new] start RL trial 5/6 dir=+
-[spot_new] RL trial 5/6 done self_can_raw=0.130
-[spot_new] RL trial 6/6 dir=- joint=shoulder env=TANGLED
-[drone_new] done  RL trial 5/6 frames=24 spot_raw=0.130
+[spot_new] RL trial 5/6 done self_can_raw=0.381
+[spot_new] RL trial 6/6 dir=- joint=shoulder
+[drone_new] done  RL trial 5/6 frames=24 spot_raw=0.381
 [drone_new] progress RL 5/6
 [drone_new] start RL trial 6/6 dir=-
-[spot_new] RL trial 6/6 done self_can_raw=0.144
+[spot_new] RL trial 6/6 done self_can_raw=0.392
 [spot_new] ===== RR start =====
-[spot_new] RR trial 1/6 dir=+ joint=knee env=NONE
-[drone_new] done  RL trial 6/6 frames=24 spot_raw=0.144
+[spot_new] RR trial 1/6 dir=+ joint=knee
+[drone_new] done  RL trial 6/6 frames=24 spot_raw=0.392
 [drone_new] progress RL 6/6
 [drone_new] start RR trial 1/6 dir=+
-[spot_new] RR trial 1/6 done self_can_raw=0.784
-[spot_new] RR trial 2/6 dir=- joint=knee env=NONE
-[drone_new] done  RR trial 1/6 frames=24 spot_raw=0.784
+[spot_new] RR trial 1/6 done self_can_raw=0.889
+[spot_new] RR trial 2/6 dir=- joint=knee
+[drone_new] done  RR trial 1/6 frames=24 spot_raw=0.889
 [drone_new] progress RR 1/6
 [drone_new] start RR trial 2/6 dir=-
-[spot_new] RR trial 2/6 done self_can_raw=0.140
-[spot_new] RR trial 3/6 dir=+ joint=hip env=NONE
-[drone_new] done  RR trial 2/6 frames=24 spot_raw=0.140
+[spot_new] RR trial 2/6 done self_can_raw=0.391
+[spot_new] RR trial 3/6 dir=+ joint=hip
+[drone_new] done  RR trial 2/6 frames=24 spot_raw=0.391
 [drone_new] progress RR 2/6
 [drone_new] start RR trial 3/6 dir=+
-[spot_new] RR trial 3/6 done self_can_raw=0.449
-[spot_new] RR trial 4/6 dir=- joint=hip env=NONE
-[drone_new] done  RR trial 3/6 frames=24 spot_raw=0.449
+[spot_new] RR trial 3/6 done self_can_raw=0.698
+[spot_new] RR trial 4/6 dir=- joint=hip
+[drone_new] done  RR trial 3/6 frames=24 spot_raw=0.698
 [drone_new] progress RR 3/6
 [drone_new] start RR trial 4/6 dir=-
-[spot_new] RR trial 4/6 done self_can_raw=0.105
-[spot_new] RR trial 5/6 dir=+ joint=shoulder env=NONE
-[drone_new] done  RR trial 4/6 frames=24 spot_raw=0.105
+[spot_new] RR trial 4/6 done self_can_raw=0.355
+[spot_new] RR trial 5/6 dir=+ joint=shoulder
+[drone_new] done  RR trial 4/6 frames=24 spot_raw=0.355
 [drone_new] progress RR 4/6
 [drone_new] start RR trial 5/6 dir=+
-[spot_new] RR trial 5/6 done self_can_raw=0.107
-[spot_new] RR trial 6/6 dir=- joint=shoulder env=NONE
-[drone_new] done  RR trial 5/6 frames=24 spot_raw=0.107
+[spot_new] RR trial 5/6 done self_can_raw=0.357
+[spot_new] RR trial 6/6 dir=- joint=shoulder
+[drone_new] done  RR trial 5/6 frames=24 spot_raw=0.357
 [drone_new] progress RR 5/6
 [drone_new] start RR trial 6/6 dir=-
-[spot_new] RR trial 6/6 done self_can_raw=0.120
-[drone_new] done  RR trial 6/6 frames=24 spot_raw=0.120
+[spot_new] RR trial 6/6 done self_can_raw=0.370
+[drone_new] done  RR trial 6/6 frames=24 spot_raw=0.370
 [drone_new] progress RR 6/6
 [drone_new] all trials done -> finalize
-[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260108_093531.png
+[drone_new] saved snapshot: controllers/drone_circular_controller/logs/images/drone_20260116_053154.png
 [spot_new] diagnosis complete
 INFO: spot_self_diagnosis: Terminating.
 INFO: drone_circular_controller: Terminating.
