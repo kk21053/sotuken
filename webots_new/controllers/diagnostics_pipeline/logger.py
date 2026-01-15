@@ -12,7 +12,7 @@ from .utils import JsonlWriter
 
 class DiagnosticsLogger:
     def __init__(self, directory: str = config.JSONL_LOG_DIR) -> None:
-        self.event_writer = JsonlWriter(directory, config.JSONL_EVENT_FILENAME)
+        self.event_writer = JsonlWriter(directory, config.JSONL_EVENT_FILENAME) if config.ENABLE_EVENT_LOG else None
         self.session_writer = JsonlWriter(directory, config.JSONL_SESSION_FILENAME)
 
     def log_trial(
@@ -23,6 +23,8 @@ class DiagnosticsLogger:
         *,
         stage: str = "finalized",
     ) -> None:
+        if self.event_writer is None:
+            return
         payload: Dict = {
             "timestamp": time.time(),
             # どの段階のログか（features_ready / finalized など）

@@ -127,7 +127,9 @@ class DroneCircularController:
         self._snapshot_saved = False
         self._snapshot_path: str | None = None
 
-        self._camera = self._init_camera()
+        self._save_snapshot_enabled = os.getenv("DRONE_SAVE_SNAPSHOT", "0") in {"1", "true", "TRUE", "yes", "YES"}
+
+        self._camera = self._init_camera() if self._save_snapshot_enabled else None
 
         self._last_center_pos = [0.0, 0.0, 0.0]
 
@@ -156,6 +158,8 @@ class DroneCircularController:
         return None
 
     def _save_snapshot_once(self) -> str | None:
+        if not self._save_snapshot_enabled:
+            return None
         if self._snapshot_saved:
             return self._snapshot_path
         self._snapshot_saved = True
@@ -402,7 +406,7 @@ class DroneCircularController:
                 snap = self._save_snapshot_once()
                 if snap:
                     try:
-                            # セッションログに載せる（外部処理が参照できるように保持）
+                        # セッションログに載せる（外部処理が参照できるように保持）
                         self.pipeline.session.image_path = snap
                     except Exception:
                         pass

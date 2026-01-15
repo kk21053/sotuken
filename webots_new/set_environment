@@ -19,6 +19,7 @@
 import sys
 import configparser
 import re
+import os
 import shutil
 from pathlib import Path
 from datetime import datetime
@@ -78,11 +79,13 @@ def update_world_file(environments):
     if not WORLD_FILE.exists():
         print(f"警告: ワールドファイルが見つかりません: {WORLD_FILE}")
         return False
-    
-    # バックアップを作成
-    backup_file = WORLD_FILE.parent / f"{WORLD_FILE.stem}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wbt"
-    shutil.copy2(WORLD_FILE, backup_file)
-    print(f"バックアップ作成: {backup_file.name}")
+
+    # バックアップはデフォルトで作成しない（不要ファイルが増殖するため）。
+    # 必要な場合のみ環境変数で有効化する。
+    if os.getenv("WEBOTS_NEW_KEEP_WORLD_BACKUP", "0") in {"1", "true", "TRUE", "yes", "YES"}:
+        backup_file = WORLD_FILE.parent / f"{WORLD_FILE.stem}_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wbt"
+        shutil.copy2(WORLD_FILE, backup_file)
+        print(f"バックアップ作成: {backup_file.name}")
     
     # ワールドファイルを読み込み
     content = WORLD_FILE.read_text()
