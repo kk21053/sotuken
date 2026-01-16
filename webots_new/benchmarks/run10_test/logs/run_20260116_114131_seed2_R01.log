@@ -1,0 +1,7 @@
+ERROR: Skipped PROTO 'RectangleArena' as it is not available at: /home/kk21053/sotuken/webots_new/protos/vendor/projects/objects/floors/protos/RectangleArena.proto.
+ERROR: Skipped PROTO 'Spot' as it is not available at: /home/kk21053/sotuken/webots_new/protos/vendor/projects/robots/boston_dynamics/spot/protos/Spot.proto.
+ERROR: Skipped PROTO 'SandPatch' as it is not available at: /home/kk21053/sotuken/webots_new/protos/custom/SandPatch.proto.
+ERROR: Skipped PROTO 'Mavic2Pro' as it is not available at: /home/kk21053/sotuken/webots_new/protos/vendor/projects/robots/dji/mavic/protos/Mavic2Pro.proto.
+ERROR: '/home/kk21053/sotuken/webots_new/worlds/sotuken_world.wbt':67:1: error: Skipped unknown 'RectangleArena' node or PROTO.
+ERROR: '/home/kk21053/sotuken/webots_new/worlds/sotuken_world.wbt':2819:10: error: Skipped unknown 'Spot' node or PROTO.
+ERROR: '/home/kk21053/sotuken/webots_new/worlds/sotuken_world.wbt':2825:11: error: Skipped unknown 'Mavic2Pro' node or PROTO.

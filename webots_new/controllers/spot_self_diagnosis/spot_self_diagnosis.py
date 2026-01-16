@@ -364,8 +364,15 @@ class SpotSelfDiagnosis:
                     continue
 
                 try:
-                    motor.setPosition(target)
-                    motor.setVelocity(motor.getMaxVelocity() * vel_scale)
+                    if leg_id in self._malfunction_legs:
+                        # 故障: 動作指令を出しても脚が動かない状況を、制御入力の無効化で再現する。
+                        # これにより Drone(RoboPose) だけでも MALFUNCTION を推定できる。
+                        if sensor is not None:
+                            motor.setPosition(sensor.getValue())
+                        motor.setVelocity(0.0)
+                    else:
+                        motor.setPosition(target)
+                        motor.setVelocity(motor.getMaxVelocity() * vel_scale)
                 except Exception:
                     pass
 
@@ -409,16 +416,22 @@ class SpotSelfDiagnosis:
 
                 # reset
                 try:
-                    motor.setPosition(0.0)
-                    motor.setVelocity(motor.getMaxVelocity() * 0.15)
+                    if leg_id in self._malfunction_legs:
+                        if sensor is not None:
+                            motor.setPosition(sensor.getValue())
+                        motor.setVelocity(0.0)
+                    else:
+                        motor.setPosition(0.0)
+                        motor.setVelocity(motor.getMaxVelocity() * 0.15)
                 except Exception:
                     pass
 
                 tau_limit = self._calculate_tau_limit()
                 self_can_raw = self._score_self_can_raw(theta_cmd, theta_meas, omega_meas, tau_meas, tau_limit)
                 if leg_id in self._malfunction_legs:
-                    # 故障は「自己診断値が破綻している」ケースとして再現する（動作指令は変えない）。
-                    self_can_raw = 0.0
+                    # 仕様.txt: 故障は「spotが動く・droneが動かない」またはその逆で判定する。
+                    # ここでは Spot 側の自己診断だけを "動く" と主張させ、Drone 観測は（指令無効化により）動かない → 不一致を再現する。
+                    self_can_raw = 1.0
                 self.send_self_diag(
                     leg_id,
                     trial_index,
@@ -427,7 +440,7 @@ class SpotSelfDiagnosis:
                     tau_limit,
                     "NORMAL",
                     self_can_raw,
-                    malfunction_flag=0,
+                    malfunction_flag=(1 if leg_id in self._malfunction_legs else 0),
                 )
                 print(f"[spot_new] {leg_id} trial {trial_index}/{diag_config.TRIAL_COUNT} done self_can_raw={self_can_raw:.3f}")
 

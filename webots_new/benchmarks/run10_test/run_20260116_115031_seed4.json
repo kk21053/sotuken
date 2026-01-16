@@ -1,0 +1,65 @@
+{
+  "schema": "run10_test/v1",
+  "created_at": "2026-01-16T11:50:43+09:00",
+  "seed": 4,
+  "patterns": 1,
+  "envs": [
+    "NONE",
+    "BURIED",
+    "TRAPPED",
+    "TANGLED",
+    "MALFUNCTION"
+  ],
+  "world": "/home/kk21053/sotuken/webots_new/worlds/sotuken_world.wbt",
+  "sessions_file": "/home/kk21053/sotuken/webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl",
+  "interrupted": false,
+  "total": {
+    "ok": 1,
+    "total": 4
+  },
+  "runs": [
+    {
+      "run_id": "R01",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "NONE",
+        "RR": "TANGLED"
+      },
+      "score": {
+        "ok": 1,
+        "total": 4,
+        "per_leg": {
+          "FL": {
+            "expected": "BURIED",
+            "got": "NONE",
+            "correct": false
+          },
+          "FR": {
+            "expected": "TRAPPED",
+            "got": "TANGLED",
+            "correct": false
+          },
+          "RL": {
+            "expected": "NONE",
+            "got": "NONE",
+            "correct": true
+          },
+          "RR": {
+            "expected": "TANGLED",
+            "got": "NONE",
+            "correct": false
+          }
+        }
+      },
+      "session_id": "drone_20260116_115037",
+      "elapsed_sec": 11.250970363616943,
+      "log_path": "/home/kk21053/sotuken/webots_new/benchmarks/run10_test/logs/run_20260116_115031_seed4_R01.log",
+      "sessions_lines": {
+        "before": 15,
+        "after": 16
+      },
+      "sessions_changed": true
+    }
+  ]
+}

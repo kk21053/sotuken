@@ -1,0 +1,779 @@
+卒業論文向け：Webots シミュレーション／診断パイプライン 完全網羅マニュアル
+（対象：webots_new/ 配下一式）
+
+作成日: 2026-01-16
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+0. このマニュアルの目的と範囲
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+本マニュアルは、webots_new/ 内のプログラムを「卒業論文に記載できる形」で、
+(1) 実行手順、(2) 設定方法、(3) 主要アルゴリズム、(4) ルールベース判定の条件分岐、
+(5) Qwen に渡すプロンプト（実際の文字列）と入出力形式、(6) ログ形式
+まで漏れなく説明する。
+
+本マニュアルの運用方針（前提）
+- 実行・検証・結果確認は、以下3つのスクリプトのみを使用する。
+  1) set_environment
+  2) run_webots
+  3) result
+
+範囲に含めるもの：
+- 実行入口：run_webots / result
+- 環境変更：set_environment（scenario.ini と worlds/sotuken_world.wbt の更新）
+- Webots コントローラ：
+  - controllers/spot_self_diagnosis/spot_self_diagnosis.py（Spot側：自己診断）
+  - controllers/drone_circular_controller/drone_circular_controller.py（Drone側：観測＋集約）
+- 診断パイプライン：controllers/diagnostics_pipeline/*
+  - pipeline.py / self_diagnosis.py / drone_observer.py / llm_client.py / rule_fusion.py / logger.py / models.py / config.py / utils.py
+- ワールド：worlds/sotuken_world.wbt（Spot/Drone/障害物定義、接触物性、controller設定）
+
+範囲に含めないもの（参照はするが詳細説明を省略）：
+- Webots標準の EXTERNPROTO（Spot.proto / Mavic2Pro.proto 等）の内部実装
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ディレクトリ構成（webots_new/）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+webots_new/
+  run_webots                : GUI起動用の簡易ランチャ（環境設定も可能）
+  set_environment            : 環境（NONE/BURIED/TRAPPED/TANGLED/MALFUNCTION）を反映する設定ツール
+  config/scenario.ini        : 環境ラベル・物理パラメータ等（脚ごとの正解ラベルもここに残る）
+  worlds/sotuken_world.wbt   : ワールド（Spot/Drone/障害物：埋没箱・トラップ・蔓）
+  controllers/
+    spot_self_diagnosis/spot_self_diagnosis.py
+    drone_circular_controller/drone_circular_controller.py
+    diagnostics_pipeline/
+      config.py              : 定数（試行構成・閾値・ログ名・環境変数）
+      models.py              : SessionState/LegState/TrialResult dataclass
+      pipeline.py            : 診断全体の司令塔（Spot集計→Drone集計→Qwen→ルール確定）
+      self_diagnosis.py       : Spot自己診断スコア集計（raw→spot_can）
+      drone_observer.py       : Drone観測（RoboPose相当）から drone_can/p_drone を推定
+      llm_client.py           : Qwen(GGUF) 推論（未設定時フォールバック）＋ Step7 ルールで最終確定
+      rule_fusion.py          : 仕様.txt Step7 ①〜④ の静的ルールベース確定（条件分岐の本体）
+      logger.py               : JSONL ログ出力
+      utils.py                : JSONL追記・確率正規化など
+      fusion.py               : 確率分布の最大ラベル選択（現行は未使用だが互換で残存）
+  controllers/drone_circular_controller/logs/
+    leg_diagnostics_sessions.jsonl : セッション単位の最終結果（result が参照）
+    leg_diagnostics_events.jsonl   : 試行単位の詳細ログ（環境変数で有効化した場合のみ）
+
+補助スクリプト：
+- webots_new/result : 直近セッションの p_rule / p_llm / cause_final / 精度 を表示する CLI
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. 必要環境（ソフトウェア・前提）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2.1 Webots
+- コマンド `webots` が PATH 上にあること。
+- GUI起動は DISPLAY/WAYLAND が必要。
+- GUI不可環境では run_webots の `--stream` を利用可能。
+
+2.2 Python
+- Python3 が動くこと。
+- Qwen を使う場合は `llama_cpp`（Pythonパッケージ）が import 可能であること。
+  - llm_client.py は `from llama_cpp import Llama` を試みる。
+
+2.3 実行形態
+- Webots 側のコントローラは worlds/sotuken_world.wbt 内で指定される。
+  - Spot: controller "spot_self_diagnosis"
+  - Drone(Mavic2Pro): controller "drone_circular_controller"
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. 実行方法（set_environment / run_webots / result のみで実行・検証）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3.1 そのままGUI起動
+- webots_new/ で以下：
+  ./run_webots
+
+run_webots の動作
+- 実行コマンドは基本 `webots --stdout --stderr worlds/sotuken_world.wbt`。
+- 事前に以下の環境変数が設定されていた場合、GUI表示のため解除する：
+  - WEBOTS_HEADLESS / WEBOTS_DISABLE_GUI / QT_QPA_PLATFORM
+
+3.2 起動前に環境を設定してGUI起動
+- 引数を 4つ与えると set_environment を実行してから Webots を起動する。
+  ./run_webots NONE BURIED TRAPPED NONE
+
+引数の順序（固定）
+- FL FR RL RR
+
+3.3 GUI不可環境での映像確認（ストリーミング）
+- run_webots に `--stream` を付ける。
+  ./run_webots --stream
+  ./run_webots --stream --stream-port 20000
+
+3.4 結果表示（直近 or 指定セッション）
+- 直近を表示
+  ./result
+
+- セッションID指定
+  ./result --session <session_id>
+
+result の表示項目（脚FL/FR/RL/RRごと）
+- p_rule（ルール最終 one-hot）
+- p_llm（Qwen/フォールバックで得た確率分布）
+- cause_final（最終ラベル。expected と一致なら緑、違えば赤）
+- Accuracy: correct/4
+
+
+3.5 検証手順（3スクリプト×10回の反復実行）
+本研究では、シミュレーション（物理計算・初期条件の微小差）による揺らぎを考慮し、
+以下の「同一手順」を 10 回繰り返し、その精度から有効性を評価する。
+
+1回分（1試行）の実行手順（必ずこの3つだけを使う）
+1) set_environment で正解環境（脚ごとのラベル）を設定
+   例：
+     ./set_environment NONE BURIED TRAPPED NONE
+   ※引数順は FL FR RL RR
+
+2) run_webots でシミュレーションを起動し、Spot/Droneコントローラの診断を完走させる
+   ./run_webots
+
+3) result で直近セッションの Accuracy を確認し、記録する
+   ./result
+
+Accuracy の定義（result が表示する値）
+- 1回の試行で、4脚（FL/FR/RL/RR）のうち「expected_cause と cause_final が一致した脚数」を correct とする。
+- Accuracy は `correct/4`（例：3/4=0.75）である。
+
+10回実行による有効性評価（集計）
+- 10回の各試行で得た correct を c1..c10 とすると、平均精度は次で求められる。
+  平均Accuracy = (c1 + c2 + ... + c10) / (4 * 10)
+- 併せて、各回の Accuracy（c_i/4）を表にして分散（ばらつき）を示すと、再現性の評価になる。
+
+実行の注意（再現性のための運用）
+- 各回は必ず Webots を終了（コントローラが simulationQuit で終了）させてから次へ進む。
+- 直前の結果は controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl の末尾に追記され、
+  result はそれを「直近セッション」として参照する。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. 環境設定ツール set_environment（脚ごとの拘束条件の反映）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：webots_new/set_environment
+
+4.1 入力と検証
+- 使い方：
+  - 対話モード： ./set_environment
+  - 引数モード： ./set_environment FL FR RL RR
+
+- 有効な環境（VALID_ENVIRONMENTS）
+  NONE / BURIED / TRAPPED / TANGLED / MALFUNCTION
+
+- 略語入力（ABBREV_MAP、入力のみ）
+  BUR→BURIED, TRA→TRAPPED, TAN→TANGLED, MAL→MALFUNCTION
+
+4.2 更新対象（必ず両方）
+1) config/scenario.ini を更新
+2) worlds/sotuken_world.wbt を更新
+
+4.3 scenario.ini の更新内容
+- configparser を使用（optionxform の既定によりキーは小文字化される）
+- 既存の物理パラメータ（摩擦等）は引き継ぐ（DEFAULTセクションのみ）
+- 各脚の環境を保存：
+  fl_environment / fr_environment / rl_environment / rr_environment
+
+- 後方互換用の scenario（最初に見つかった環境で決める）
+  env==BURIED  → scenario='sand_burial' かつ buriedFoot=<leg_name>
+  env==TRAPPED → scenario='foot_trap'   かつ trappedFoot=<leg_name>
+  env==TANGLED → scenario='foot_vine'   かつ tangledFoot=<leg_name>
+  envが全部NONE/MALFUNCTIONだけの場合 → scenario='none'
+
+脚名（LEG_NAMES）
+- FL: front_left
+- FR: front_right
+- RL: rear_left
+- RR: rear_right
+
+4.4 worlds/sotuken_world.wbt の更新内容（障害物の表示/非表示）
+基本方針
+- 各脚ごとに、障害物の Solid/Group の translation を書き換える。
+- 「非表示」は z=-100.0 に飛ばす（hide_translation）。
+
+ワールド内の対象 DEF 名（例：FL）
+- 埋没箱（BURIED）
+  DEF BURIED_BOTTOM_FL / BURIED_TOP_FL / BURIED_LEFT_FL / BURIED_RIGHT_FL / BURIED_FRONT_FL / BURIED_BACK_FL
+  （FR/RL/RRも同様）
+- トラップ（TRAPPED）
+  DEF FOOT_TRAP_FL（FR/RL/RRも同様）
+- 蔓（TANGLED）
+  DEF FOOT_VINE_FL（FR/RL/RRも同様）
+
+環境タイプ別の処理
+- NONE:
+  - BURIED/TRAP/VINE を全て z=-100 にして非表示
+
+- BURIED:
+  - 対象脚の BURIED_* を表示座標へ移動
+  - ただし BURIED_BOTTOM は「Spotが上に乗る原因」になりやすいので表示しない（＝非表示のまま）
+  - 表示するのは TOP と 4壁（LEFT/RIGHT/FRONT/BACK）
+  - 位置は中心(bx,by) と固定オフセットで決める
+    - offset_xy=0.10
+    - z_wall_center=0.08
+    - z_top_center=0.12
+
+  中心座標（buried_center_xy）
+  - 基本は base_xy を使う
+  - ただし後脚 RL/RR は x=-0.26 に固定（要望に基づく）
+
+- TRAPPED:
+  - FOOT_TRAP_<leg> を表示座標へ（z=0.0）
+  - 後脚 RL/RR は x=-0.26 に固定（trap_xy）
+
+- TANGLED:
+  - FOOT_VINE_<leg> を表示座標へ（z=0.05）
+  - 座標は脚ごとに vine_xy で固定（要望に基づく）
+
+- MALFUNCTION:
+  - 物体配置は行わない（全て非表示のまま）
+  - 代わりに「Spotのコントローラ引数」で故障脚を伝える
+
+4.5 MALFUNCTION の controllerArgs 反映（重要）
+- MALFUNCTION 指定脚が1つでもある場合、SPOTノードに以下引数を入れる：
+  --malfunction_legs=FL,RR のようなCSV
+
+- worlds/sotuken_world.wbt の該当箇所（例）
+  DEF SPOT Spot {
+    ...
+    controller "spot_self_diagnosis"
+    controllerArgs [ "--malfunction_legs=FL,RR" ]
+    ...
+  }
+
+4.6 ワールドバックアップ
+- 通常はバックアップを作らない（増殖防止）
+- 必要な場合のみ環境変数で有効：
+  WEBOTS_NEW_KEEP_WORLD_BACKUP=1
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. ワールド worlds/sotuken_world.wbt の要点（研究記述用）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5.1 主要ノード
+- Spot：DEF SPOT Spot
+  - controller "spot_self_diagnosis"
+  - supervisor TRUE
+
+- Drone：DEF DRONE Mavic2Pro
+  - controller "drone_circular_controller"
+  - supervisor TRUE
+  - cameraSlot に Camera（幅400×高さ240）がある
+
+5.2 接触物性（ContactProperties）
+WORLD_INFO.contactProperties に以下が定義され、障害物の contactMaterial と対応する。
+- SAND_CONTACT: material1 "sand" friction=50
+- TRAP_CONTACT: material1 "trap" friction=10000
+- VINE_CONTACT: material1 "vine" friction=2
+- BURIED_CONTACT: material1 "buried_box" friction=50000
+- BURIED_TOP_CONTACT: material1 "buried_box_top" friction=0.1
+
+※埋没箱トップは滑りやすくして「膝がTOPに乗ってしまう問題」を緩和する意図。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. コントローラ間通信（Spot → Drone：customData）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Spot（spot_self_diagnosis.py）は、Robot.customData に文字列を設定し、
+Drone（drone_circular_controller.py）は Spotノードの customData を監視して受信する。
+
+形式：1ステップ内に複数メッセージを送る場合、改行で連結する。
+- Spot側は _send() でキューを作り、setSFString で送信。
+- Drone側は raw.strip().split("\n") で複数行に分割。
+
+メッセージ種別（既存互換）
+1) TRIGGER
+  TRIGGER|leg_id|trial_index|direction|start_time|duration_ms
+
+2) JOINT_ANGLES
+  JOINT_ANGLES|leg_id|trial_index|a0|a1|a2
+  - a0/a1/a2 は度(deg)
+
+3) SELF_DIAG
+  SELF_DIAG|leg_id|trial_index|theta_samples|theta_avg|theta_final|tau_avg|tau_max|tau_nominal|safety|self_can_raw|malfunction_flag
+
+重要な実装注意
+- customData は「同一ステップ内の最後の setSFString が勝つ」ため、
+  Spot側は SELF_DIAG 送信後に必ず 1step 進め、Droneが観測できる猶予を作っている。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. Spot自己診断（spot_self_diagnosis.py）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/spot_self_diagnosis/spot_self_diagnosis.py
+
+7.1 試行構成（diagnostics_pipeline/config.py 準拠）
+- 脚：LEG_IDS = ("FL","FR","RL","RR")
+- 試行数：TRIAL_COUNT=6
+- 試行パターン：TRIAL_PATTERN=("+","-","+","-","+","-")
+- 動かす関節（インデックス）：TRIAL_MOTOR_INDICES=(2,2,1,1,0,0)
+  - 2: knee, 1: hip, 0: shoulder
+- 試行時間：TRIAL_DURATION_S=0.4[s]
+- 指令角：TRIAL_ANGLE_DEG=4.0[deg]
+
+7.2 センサ値のサニタイズ
+- PositionSensor が NaN/inf/極端値を返す場合があるため、
+  - NaN/inf → 0.0 扱い
+  - |rad|>3.0（約172deg）→ 0.0 扱い
+
+7.3 安全角の計算（_safe_angle）
+- motor.getMinPosition()/getMaxPosition() を参照して、
+  現在角から ±30deg の範囲で「余裕1deg」を引いた safe_pos/safe_neg を計算。
+
+7.4 実行ループ
+各脚×各試行で以下を行う：
+1) TRIGGER を送信
+2) 指令値 target を設定し、一定速度で動かす
+3) 0.4秒間 step しながら毎step JOINT_ANGLES を送信
+4) 同時に、theta_meas / omega_meas / tau_meas を収集
+5) 試行終了後、関節を0へ戻す
+6) self_can_raw を計算し SELF_DIAG を送信
+
+7.5 self_can_raw の計算（Spot側）
+関数：_score_self_can_raw(theta_cmd, theta_meas, omega_meas, tau_meas, tau_limit)
+構成要素
+- track: 追従性（平均誤差で 0..1）
+  track = clamp(1 - (avg(|theta_cmd-theta_meas|)/3.0))
+- vel: 速度（ピーク速度/27.0 を 0..1）
+- tau: トルク（本簡潔版では 1.0 固定）
+  ※「抵抗が大きい=動かない」とは限らないため、自己診断では強く効かせない設計。
+- safe: 安全性（本簡潔版では 1.0 固定）
+
+重み（SELF_WEIGHTS）
+- track:0.4, vel:0.25, tau:0.25, safe:0.1
+
+7.6 MALFUNCTION の再現
+- set_environment が controllerArgs で --malfunction_legs=... を Spot に渡す
+- Spot側はその脚について「動作指令を無効化」
+  - motor.setPosition(sensor.getValue())
+  - motor.setVelocity(0.0)
+- ただし self_can_raw は 1.0 に上書きする
+  - 仕様.txt の故障判定（SpotとDroneの不一致）を再現するため。
+  - Drone側（関節角/末端変位）は動かない → drone_can が低い
+  - Spot側（自己診断）は動くと主張 → spot_can が高い
+
+7.7 フェイルセーフ
+- SPOT_MAX_RUNTIME_S（既定180秒）を超えたら simulationQuit(1)
+- SPOT_AUTO_QUIT（既定1）なら、最後に猶予を置いて simulationQuit(0)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+8. Drone観測（drone_circular_controller.py）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/drone_circular_controller/drone_circular_controller.py
+
+8.1 役割
+- Spot customData を監視し、
+  - TRIGGER で trial 開始
+  - JOINT_ANGLES で観測フレームを pipeline に蓄積
+  - SELF_DIAG を受け取ったら trial を complete して推定を更新
+- 全脚×6試行が終わったら pipeline.finalize() してセッションログを JSONL に保存
+
+8.2 観測（RoboPose相当）の生成
+- Spotからは関節角（deg）しか来ないため、以下の近似を行う。
+
+(1) 近似フォワードキネマティクス _fk_foot_local()
+- パラメータ（既存版互換）
+  L1=0.11, L2=0.26, L3=0.26
+  y_offset = -0.25（左脚） / +0.25（右脚）
+- 入力：3関節角（deg）
+- 出力：足先位置（胴体ローカル）
+
+(2) 胴体の傾き補正 _compensate_for_body_tilt()
+- Spotのorientation(3x3)から roll/pitch/yaw を算出
+- 試行開始時姿勢との差分 delta_roll/delta_pitch を取り、
+  観測足先座標を逆回転して「傾きで見かけの変位が変わる」影響を抑える
+
+(3) end_position（末端変位）
+- 試行の初期足先を init_foot として保持し、
+  end_disp = current_foot - init_foot を pipeline に渡す
+
+8.3 試行完了の条件
+- Drone側は TRIGGER から end_time を計算しておき、now>=end_time になったら完了候補
+- SELF_DIAG が来ていない場合は最大5秒待つ
+- complete_trial の入力
+  - drone観測系列：trialバッファに蓄積した joint_angles / end_positions
+  - spot側情報：self_can_raw, tau_avg, tau_max, tau_nominal, safety, malfunction_flag
+
+8.4 ログスナップショット（任意）
+- DRONE_SAVE_SNAPSHOT=1 で有効
+- DRONEの camera device を探索（"camera" 等）して 1枚だけ保存
+- 保存先：controllers/drone_circular_controller/logs/images/<session_id>.png
+- セッションログに image_path（webots_new ルートからの相対パス）を保存
+
+8.5 フェイルセーフ
+- DRONE_MAX_RUNTIME_S（既定180秒）を超えたら finalize+quit
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+9. 診断パイプライン（diagnostics_pipeline/）全体像
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/diagnostics_pipeline/pipeline.py
+
+9.1 処理順序（仕様上の“3つのみ”）
+1) Spot自己診断（Spot側 self_can_raw を集約して spot_can）
+2) Drone観測（RoboPose相当：関節角/末端変位系列 → drone_can と p_drone）
+3) LLM(Qwen)（未設定時フォールバック）+ 仕様 Step7 ルールで最終確定
+
+9.2 データ構造（models.py）
+- SessionState(session_id, image_path, legs)
+- LegState
+  - spot_can, drone_can
+  - p_drone, p_llm
+  - movement_result（"動く"/"動かない"/"一部動く"）
+  - cause_final（最終ラベル）
+  - cause_rule, p_rule（Step7ルール結果）
+  - expected_cause（scenario.ini に基づく正解ラベル）
+- TrialResult
+  - self_can_raw_i, drone_can_raw_i, features（特徴量）など
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+10. Spot集計（self_diagnosis.py）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+目的：6試行の self_can_raw（0..1）を集計し spot_can（0..1）に変換。
+
+10.1 raw の入力
+- 本実装では Drone側が受け取る self_can_raw をそのまま record_raw_trial() に入力する。
+- spot_can_raw が None の場合は 0.35 を使う（欠損耐性）。
+
+10.2 一貫性補正（stdev）
+- 6試行の標準偏差が大きく consistency が低い場合、
+  spot_can が高い/低い側を少し保守的に補正。
+  consistency = 1 - (stdev(scores)/0.3)
+  - consistency < 0.6 のとき
+    - avg > SELF_CAN_THRESHOLD(0.5) なら avg*=0.95
+    - それ以外なら avg*=1.05
+
+10.3 シグモイド変換（spot_can）
+- x = CONFIDENCE_STEEPNESS(15.0) * (avg - SELF_CAN_THRESHOLD(0.5))
+- spot_can = 1/(1+exp(-x))（ただし x>20→1.0、x<-20→0.0）
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+11. Drone集計（drone_observer.py）：特徴量・確率分布・条件分岐
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/diagnostics_pipeline/drone_observer.py
+
+11.1 drone_can_raw（動けている度合い）
+- 試行ごとに対象関節（TRIAL_MOTOR_INDICES）だけを抽出して series を作る。
+- delta_theta = max(series) - min(series)
+- drone_can_raw = clamp(delta_theta / DELTA_THETA_REF_DEG)
+  - DELTA_THETA_REF_DEG は TRIAL_ANGLE_DEG=4.0 と同じ
+
+11.2 試行特徴量（trial.features）
+_build_features(delta_theta_deg, delta_theta_norm, end_positions)
+- delta_theta_deg
+- delta_theta_norm
+- end_disp: 末端変位（最初と最後の距離）
+- path_length: 末端軌跡長（フレーム間距離の総和）
+- path_straightness: path_length/(end_disp+EPSILON)
+- reversals: x方向速度の符号反転回数（簡易）
+
+11.3 drone_can（脚が動けている確率）
+- raw 平均 → spotと同じ形のシグモイドを適用
+  x = CONFIDENCE_STEEPNESS(15.0) * (raw_avg - SELF_CAN_THRESHOLD(0.5))
+
+11.4 p_drone（拘束原因の確率分布）の推定：条件分岐（完全列挙）
+_estimate_cause_distribution(features) で「1試行分の分布」を返す。
+その後、各試行を重み付き平均して leg.p_drone を得る。
+
+(1) 試行ごとの閾値定数（簡潔版）
+- NORMAL_DISP_MIN   = 0.015
+- BURIED_DISP_MAX   = 0.006
+- TRAPPED_DISP_MAX  = 0.012
+- BURIED_ANGLE_MAX  = 0.75
+- TRAPPED_ANGLE_MIN = 1.25
+- BURIED_REVERSALS_MIN = 8.0
+
+(2) NONE 判定（十分に動けている）
+条件:
+- end_disp >= NORMAL_DISP_MIN
+返す分布:
+- {NONE:0.85, BURIED:0.03, TRAPPED:0.03, TANGLED:0.03, MALFUNCTION:0.06}
+
+(3) TANGLED スコア tangled_score（0..3）
+以下の条件を満たすたびに +1
+- path_straightness >= 2.5
+- reversals >= 3.0
+- path_length >= 0.020 かつ end_disp <= 0.010
+
+(4) end_dispが極小だが角度は動く（蔓絡み寄り）
+条件:
+- end_disp < BURIED_DISP_MAX
+- delta_theta_deg >= 1.0
+- reversals <= 3.0
+返す分布:
+- {NONE:0.05, BURIED:0.06, TRAPPED:0.10, TANGLED:0.76, MALFUNCTION:0.03}
+
+(5) 強い拘束（BURIED/TRAPPED領域）
+条件:
+- end_disp < BURIED_DISP_MAX
+- delta_theta_deg < BURIED_ANGLE_MAX
+
+(5-a) BURIED っぽい（反転が多い）
+条件:
+- reversals >= BURIED_REVERSALS_MIN
+返す分布:
+- {NONE:0.05, BURIED:0.85, TRAPPED:0.03, TANGLED:0.03, MALFUNCTION:0.04}
+
+(5-b) TRAPPED より僅かに動ける→TANGLED寄り（経験的分岐）
+条件:
+- end_disp >= 0.0018
+- reversals <= 3.0
+返す分布:
+- {NONE:0.05, BURIED:0.06, TRAPPED:0.10, TANGLED:0.76, MALFUNCTION:0.03}
+
+(5-c) tangled_score が高い→TANGLED寄り
+条件:
+- tangled_score >= 2.0
+返す分布:
+- {NONE:0.05, BURIED:0.06, TRAPPED:0.10, TANGLED:0.76, MALFUNCTION:0.03}
+
+(5-d) それ以外（TRAPPED優勢）
+返す分布:
+- {NONE:0.05, BURIED:0.08, TRAPPED:0.80, TANGLED:0.04, MALFUNCTION:0.03}
+
+(6) TRAPPED 領域（角度は動くが末端が動かない）
+条件:
+- delta_theta_deg >= TRAPPED_ANGLE_MIN
+- BURIED_DISP_MAX <= end_disp < TRAPPED_DISP_MAX
+
+(6-a) 往復が少なく end_disp が少し大きい→TANGLED寄り
+条件:
+- reversals <= 3.0
+- end_disp >= 0.0065
+返す分布:
+- {NONE:0.05, BURIED:0.05, TRAPPED:0.10, TANGLED:0.75, MALFUNCTION:0.05}
+
+(6-b) tangled_score が高い→TANGLED寄り
+条件:
+- tangled_score >= 2.0
+返す分布:
+- {NONE:0.05, BURIED:0.05, TRAPPED:0.10, TANGLED:0.75, MALFUNCTION:0.05}
+
+(6-c) それ以外（TRAPPED優勢）
+返す分布:
+- {NONE:0.05, BURIED:0.05, TRAPPED:0.80, TANGLED:0.05, MALFUNCTION:0.05}
+
+(7) TANGLED 領域（末端は動くが拘束っぽい）
+条件:
+- end_disp >= BURIED_DISP_MAX
+- tangled_score >= 1.0
+返す分布:
+- {NONE:0.05, BURIED:0.05, TRAPPED:0.10, TANGLED:0.75, MALFUNCTION:0.05}
+
+(8) 曖昧（どれでもない）
+返す分布:
+- {NONE:0.12, BURIED:0.12, TRAPPED:0.32, TANGLED:0.32, MALFUNCTION:0.12}
+
+11.5 試行の重み付き平均（TANGLED対策）
+- 1試行の重み weight = max(EPSILON, raw + 0.05)
+- p_drone は、各試行分布を weight で加算し、重み総和で割って正規化
+意図：
+- TANGLED は「ある程度動くが進まない」ため、raw が極小の試行（ほぼ動かない）が平均を支配しないようにする。
+
+11.6 MALFUNCTION の扱い
+- RoboPoseだけでは外部拘束と区別が難しいため、p_drone では強く出さない。
+- 最終は Spot と Drone の不一致（Step7ルール）で確定させる。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+12. Qwen（GGUF）推論とプロンプト全文（llm_client.py）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/diagnostics_pipeline/llm_client.py
+
+12.1 有効化条件（環境変数）
+- QWEN_ENABLE=1
+- QWEN_GGUF_PATH=/path/to/model.gguf
+
+上記が揃わない場合、Qwenは使われずフォールバック（p_drone か一様分布）になる。
+
+12.2 推論API
+- llama_cpp.Llama を使用
+- 2通りの呼び方に対応
+  A) create_chat_completion がある場合（Chat API）
+  B) 無い場合は、生プロンプト文字列（<|im_start|>...）を生成して呼ぶ
+
+12.3 Qwenに渡す入力 payload（JSON）
+payload には以下を入れる（値は 0..1 を基本）：
+- leg_id
+- spot_can
+- drone_can
+- p_drone（ラベル→確率）
+- fallback（ラベル→確率）
+- trial_feature_summary（特徴量の要約）
+
+trial_feature_summary の中身（存在すれば）
+- spot_malfunction_flag_any
+- spot_tau_max_ratio_median
+- delta_theta_norm_median
+- end_disp_median
+
+12.4 Qwen システムプロンプト（文字列そのまま）
+環境変数 QWEN_SYSTEM があればそれを使い、無い場合の既定は以下：
+
+「あなたは四足歩行ロボットSpotの脚診断エキスパートです。出力は必ずJSONのみ。」
+
+※この system は messages の role="system" に入る。
+
+12.5 Qwen ユーザプロンプト（文字列そのまま）
+user は以下のテンプレートで生成される：
+
+"ラベル集合: {labels}\n"
+"出力はJSONオブジェクトのみ。各ラベルは0..1で合計1.0。\n"
+"入力(JSON): {payload}"
+
+ここで
+- labels = ["NONE","BURIED","TRAPPED","TANGLED","MALFUNCTION"]
+- payload = 上述の JSON を文字列化したもの（ensure_ascii=False）
+
+12.6 Qwen 出力のパース
+_extract_probs(text) の順序
+1) text から最初の "{ ... }" を抜き出し json.loads を試す
+  - dict なら、キーがラベル集合に含まれるものだけ取り出す
+  - 欠けているラベルは 0.0 で補完
+2) JSON が取れない場合、text にラベル単体が含まれていれば one-hot にする
+3) どれも無理なら None
+
+成功した場合は normalize_probs で非負＆総和1に正規化。
+
+12.7 max_tokens/temperature
+- temperature は常に 0.0
+- max_tokens は環境変数 QWEN_MAX_TOKENS を優先（なければデフォルト256）
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+13. 静的ルールベース判定（rule_fusion.py）：条件分岐の完全列挙
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+対象ファイル：controllers/diagnostics_pipeline/rule_fusion.py
+
+13.1 入力
+- spot_can: Spot自己診断からの「動ける確率」
+- drone_can: Drone観測からの「動ける確率」
+- prob_dist: 原因ラベル分布（通常は p_llm を使い、Qwen無効時は p_drone）
+
+13.2 閾値
+- lo = 0.3
+- hi = 0.7
+（diagnostics_pipeline/config.py にも同値が定義されているが、rule_fusion.py の既定引数も 0.3/0.7）
+
+13.3 ルール（仕様.txt Step7 ①〜④）
+戻り値： (movement_result, cause_rule, p_rule)
+
+①「両方とも動く」
+条件:
+- spot_can >= hi AND drone_can >= hi
+出力:
+- movement_result = "動く"
+- cause_rule = "NONE"
+- p_rule = one_hot("NONE")
+
+②「両方とも動かない」
+条件:
+- spot_can <= lo AND drone_can <= lo
+出力:
+- movement_result = "動かない"
+- cause_rule = argmax(prob_dist)
+- p_rule = one_hot(cause_rule)
+
+③「不一致（故障）」
+条件:
+- (spot_can >= hi AND drone_can <= lo) OR (spot_can <= lo AND drone_can >= hi)
+出力:
+- movement_result = "動かない"
+- cause_rule = "MALFUNCTION"
+- p_rule = one_hot("MALFUNCTION")
+
+④「それ以外（部分的）」
+条件:
+- 上記①②③以外
+出力:
+- movement_result = "一部動く"
+- cause_rule = argmax(prob_dist)
+- p_rule = one_hot(cause_rule)
+
+13.4 最終ラベル（cause_final）
+llm_client.py の infer() は rule_based_decision の結果を
+- leg.cause_rule = cause_rule
+- leg.p_rule = p_rule
+- leg.movement_result = movement
+- leg.cause_final = cause_rule
+として格納する。
+
+重要：
+- 最終ラベル cause_final は常に「ルール結果」であり、Qwenの出力ラベルそのものではない。
+- Qwen は prob_dist（argmax対象）を改善する役割。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14. ログ仕様（logger.py / utils.py）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+14.1 保存形式
+- JSON Lines（1行1JSON）
+- utils.JsonlWriter が追記で保存する
+- json.dumps(..., ensure_ascii=True) なので、日本語は \uXXXX にエスケープされる
+
+14.2 出力先
+- controllers/drone_circular_controller/logs/ を作業ディレクトリとして使用（drone側で chdir）
+- セッションログ（常に出力）
+  logs/leg_diagnostics_sessions.jsonl
+
+- 試行イベントログ（必要時のみ出力）
+  logs/leg_diagnostics_events.jsonl
+  有効化：DIAG_ENABLE_EVENT_LOG=1
+
+14.3 セッションログ（sessions.jsonl）
+SessionRecord.to_dict() の形式
+- timestamp
+- session_id
+- image_path（DRONE_SAVE_SNAPSHOT=1 のとき）
+- legs: { "FL": {...}, "FR": {...}, ... }
+  各脚の中身：
+  - spot_can, drone_can
+  - p_drone, p_llm
+  - movement_result
+  - cause_final
+  - p_can（(spot_can+drone_can)/2 を主に表示用として保持）
+  - cause_rule, p_rule
+  - expected_cause（scenario.ini 由来）
+
+14.4 イベントログ（events.jsonl）
+DiagnosticsLogger.log_trial() の payload（ENABLE_EVENT_LOG時のみ）
+- timestamp, stage, session_id
+- leg_id, trial_index, dir
+- start_time, end_time, duration
+- self_can_raw_i, drone_can_raw_i
+- features（delta_theta_deg, end_disp, reversals 等）
+- spot_can, drone_can, p_drone, p_llm, p_can
+- cause_final, movement_result
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+15. 重要な環境変数一覧（再現性のため論文に記載推奨）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Webots起動・表示
+- （run_webots が解除する）WEBOTS_HEADLESS / WEBOTS_DISABLE_GUI / QT_QPA_PLATFORM
+- run_webots: --stream / --stream-port
+
+環境設定
+- WEBOTS_NEW_KEEP_WORLD_BACKUP=1 : worlds のバックアップ作成
+
+Spotコントローラ
+- SPOT_MAX_RUNTIME_S（既定180）
+- SPOT_AUTO_QUIT（既定1）
+
+Droneコントローラ
+- DRONE_MAX_RUNTIME_S（既定180）
+- DRONE_SAVE_SNAPSHOT=1
+
+診断ログ
+- DIAG_ENABLE_EVENT_LOG=1
+
+Qwen（GGUF）
+- QWEN_ENABLE=1
+- QWEN_GGUF_PATH=/path/to/model.gguf
+- QWEN_SYSTEM="..."（任意）
+- QWEN_MAX_TOKENS=256（任意）

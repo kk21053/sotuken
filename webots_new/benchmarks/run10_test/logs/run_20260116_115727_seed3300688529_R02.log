@@ -1,0 +1,4 @@
+INFO: spot_self_diagnosis: Starting controller: python3 -u spot_self_diagnosis.py --malfunction_legs=RL
+INFO: drone_circular_controller: Starting controller: python3 -u drone_circular_controller.py
+INFO: spot_self_diagnosis: Terminating.
+INFO: drone_circular_controller: Terminating.

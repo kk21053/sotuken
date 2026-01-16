@@ -127,7 +127,9 @@ class DroneCircularController:
         self._snapshot_saved = False
         self._snapshot_path: str | None = None
 
-        self._camera = self._init_camera()
+        self._save_snapshot_enabled = os.getenv("DRONE_SAVE_SNAPSHOT", "0") in {"1", "true", "TRUE", "yes", "YES"}
+
+        self._camera = self._init_camera() if self._save_snapshot_enabled else None
 
         self._last_center_pos = [0.0, 0.0, 0.0]
 
@@ -156,6 +158,8 @@ class DroneCircularController:
         return None
 
     def _save_snapshot_once(self) -> str | None:
+        if not self._save_snapshot_enabled:
+            return None
         if self._snapshot_saved:
             return self._snapshot_path
         self._snapshot_saved = True
@@ -291,10 +295,10 @@ class DroneCircularController:
                     # 足先位置（胴体ローカル）
                     x_local, y_local, z_local = _fk_foot_local(leg_id, angles)
 
-                    # 注意:
-                    # ここで計算する足先位置はFK由来の「胴体ローカル座標」なので、
-                    # 胴体の傾き(delta_roll/pitch)で回転補正すると座標系が二重補正になり、
-                    # 混在ケースで end_disp が過大になることがある。
+                    # 胴体の傾き変化を補正（転倒/傾きで見かけの変位が変わるのを抑える）
+                    x_local, y_local, z_local = _compensate_for_body_tilt(
+                        x_local, y_local, z_local, delta_roll, delta_pitch
+                    )
 
                     if state["init_foot"] is None:
                         state["init_foot"] = (x_local, y_local, z_local)
@@ -402,7 +406,7 @@ class DroneCircularController:
                 snap = self._save_snapshot_once()
                 if snap:
                     try:
-                            # セッションログに載せる（外部処理が参照できるように保持）
+                        # セッションログに載せる（外部処理が参照できるように保持）
                         self.pipeline.session.image_path = snap
                     except Exception:
                         pass
@@ -449,15 +453,45 @@ class DroneCircularController:
             pass
 
     def run(self) -> None:
-        while self.supervisor.step(self.time_step) != -1:
-            self.process_messages()
-            self._maybe_complete_trials()
-            self.update_position()
+        try:
+            while self.supervisor.step(self.time_step) != -1:
+                self.process_messages()
+                self._maybe_complete_trials()
+                self.update_position()
 
-            # フェイルセーフ: 何らかの理由で試行が完了しない/quitできない場合でも終了させる
-            now = float(self.supervisor.getTime())
-            if (now - self._start_time) > self._max_runtime_s and not self._finalized:
-                print(f"[drone_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> finalize+quit")
+                # フェイルセーフ: 何らかの理由で試行が完了しない/quitできない場合でも終了させる
+                now = float(self.supervisor.getTime())
+                if (now - self._start_time) > self._max_runtime_s and not self._finalized:
+                    print(f"[drone_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> finalize+quit")
+                    snap = self._save_snapshot_once()
+                    if snap:
+                        try:
+                            self.pipeline.session.image_path = snap
+                        except Exception:
+                            pass
+                    try:
+                        self.pipeline.finalize()
+                    except Exception:
+                        pass
+                    self._finalized = True
+                    self._quit_time = now + 0.5
+
+                if self._finalized and self._quit_time is not None:
+                    if self.supervisor.getTime() >= self._quit_time:
+                        if not self._quit_message_printed:
+                            print("[drone_new] quit simulation")
+                            self._quit_message_printed = True
+                        try:
+                            self.supervisor.simulationQuit(0)
+                        except Exception as exc:
+                            if not self._quit_error_printed:
+                                print(f"[drone_new] warn: simulationQuit failed: {exc}")
+                                self._quit_error_printed = True
+        finally:
+            # Spot側の simulationQuit 等で step() が -1 になった場合でも、
+            # セッションJSONLが出力されず評価側が前回セッションを拾う事故を避ける。
+            if not self._finalized:
+                print("[drone_new] finalize on exit (failsafe)")
                 snap = self._save_snapshot_once()
                 if snap:
                     try:
@@ -469,19 +503,6 @@ class DroneCircularController:
                 except Exception:
                     pass
                 self._finalized = True
-                self._quit_time = now + 0.5
-
-            if self._finalized and self._quit_time is not None:
-                if self.supervisor.getTime() >= self._quit_time:
-                    if not self._quit_message_printed:
-                        print("[drone_new] quit simulation")
-                        self._quit_message_printed = True
-                    try:
-                        self.supervisor.simulationQuit(0)
-                    except Exception as exc:
-                        if not self._quit_error_printed:
-                            print(f"[drone_new] warn: simulationQuit failed: {exc}")
-                            self._quit_error_printed = True
 
 
 def main() -> None:

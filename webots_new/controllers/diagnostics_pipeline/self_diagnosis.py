@@ -58,6 +58,41 @@ class SelfDiagnosisAggregator:
         leg.trials.append(trial)
         return trial
 
+    def record_raw_trial(
+        self,
+        leg: LegState,
+        trial_index: int,
+        direction: str,
+        start_time: float,
+        end_time: float,
+        self_can_raw: float,
+    ) -> TrialResult:
+        """Spot側で計算された self_can_raw をそのまま集計に使う。
+
+        Drone側には theta_cmd/theta_meas の系列が届かないため、
+        （Spotの比較で求めた）raw値を入力として扱う。
+        """
+        try:
+            raw = clamp(float(self_can_raw))
+        except Exception:
+            raw = 0.0
+
+        scores = self._raw_scores.setdefault(leg.leg_id, [])
+        if len(scores) >= config.TRIAL_COUNT:
+            scores.pop(0)
+        scores.append(raw)
+
+        trial = TrialResult(
+            leg_id=leg.leg_id,
+            trial_index=int(trial_index),
+            direction=str(direction),
+            start_time=float(start_time),
+            end_time=float(end_time),
+            self_can_raw=raw,
+        )
+        leg.trials.append(trial)
+        return trial
+
     def finalize_leg(self, leg: LegState) -> None:
         scores = self._raw_scores.get(leg.leg_id, [])
         if len(scores) < config.TRIAL_COUNT:

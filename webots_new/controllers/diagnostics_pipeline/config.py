@@ -1,5 +1,6 @@
 """診断パイプラインの設定（仕様に合わせた定数）"""
 
+import os
 from typing import Tuple
 
 # 各脚のID
@@ -35,9 +36,6 @@ SAFE_SCORE_WARN: float = 0.5
 SAFE_SCORE_ERROR: float = 0.0
 DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
 
-# Drone観測の末端移動量の正規化（経験的に、正常時は end_disp が 0.03m 以上になりやすい）
-END_DISP_REF_M: float = 0.03
-
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True
 
@@ -45,5 +43,9 @@ USE_ONLY_ROBOPOSE: bool = True
 JSONL_LOG_DIR: str = "logs"
 JSONL_EVENT_FILENAME: str = "leg_diagnostics_events.jsonl"
 JSONL_SESSION_FILENAME: str = "leg_diagnostics_sessions.jsonl"
+
+# eventログ（詳細ログ）はデフォルト無効。
+# 必要な場合のみ環境変数で有効化する（ファイル増殖を防ぐ）。
+ENABLE_EVENT_LOG: bool = os.getenv("DIAG_ENABLE_EVENT_LOG", "0") in {"1", "true", "TRUE", "yes", "YES"}
 
 EPSILON: float = 1e-6
