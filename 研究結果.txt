@@ -1,0 +1,164 @@
+研究結果（精度評価 + 所要時間内訳計測）
+作成日: 2026-01-17
+
+1. 概要
+本ファイルは、Webots上の診断パイプラインについて以下2点をまとめた「論文用の根拠データ集」である。
+(A) 精度評価: run10_webotsの結果とセッションログを突合し、原因推定の正解率（Accuracy）を集計
+(B) 所要時間: 診断処理を段階別に計測し、run10（10回）で内訳が継続的に出力されることを確認
+
+2. 対象データ（入力）
+2.1 精度評価（10回試行が揃っているデータ）
+- run10_webots結果（10回）:
+  - webots_new/benchmarks/run10_webots/run_20260116_202349_seed309594852.json
+  - seed: 309594852 / runs: 10（R01〜R10）
+- result10集計JSON（上記を突合して生成）:
+  - webots_new/benchmarks/run10_webots/run_20260116_202349_seed309594852_result10.json
+- セッションログ（診断出力）:
+  - webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl
+
+2.2 所要時間内訳（run10での確認用データ）
+- run10_webots結果（10回）:
+  - webots_new/benchmarks/run10_webots/run_20260117_040235_seed20260117.json
+  - seed: 20260117 / runs: 10 / envs: NONEのみ（所要時間計測の動作確認目的）
+- セッションログ（段階別timing_*を含む）:
+  - webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl
+  - 今回は直近10セッション（=run10の10回分）を解析対象とした。
+
+3. 評価指標と集計方法
+3.1 精度（result10）
+- 各run（R01〜）は脚4本（FL/FR/RL/RR）の期待ラベル expected を持つ。
+- sessions.jsonlから期待ラベル expected_cause が一致するセッションを探し、開始時刻付近のものを優先してマッチングする。
+- Accuracyは「期待ラベル == cause_final」の一致数/4。
+- 10回の平均Accuracyは、全40脚の正解数/40（micro平均）。
+
+3.2 所要時間（段階別計測）
+- sessions.jsonlの各脚に以下が追記される。
+  - timing_total_s: 段階別の累積秒
+  - timing_calls: 段階別の計測回数
+  - timing_avg_s: 段階別の平均秒（total/calls）
+  - timing_last_s: 最新の計測秒
+
+注意: ここでの所要時間は「診断パイプライン（Python側）の計算時間」を計測しており、Webots物理シミュレーション自体の進行時間（可視化/物理計算）とは別である。
+
+4. 研究結果A: 精度評価（seed=309594852, runs=10）
+4.1 マッチング状況
+- matched: 10 / runs: 10（10回すべてセッションを特定）
+
+4.2 平均Accuracy（全40脚）
+- correct/total: 22 / 40
+- avg_accuracy: 0.55
+
+4.2.1 ばらつき（run単位のAccuracy）
+- run単位Accuracy（n=10）: mean=0.55, median=0.50, min=0.00, max=1.00
+- 標準偏差: 0.284（標本標準偏差）
+
+4.2.2 95%信頼区間（micro平均）
+- 40脚を独立試行とみなした micro平均 $p=22/40=0.55$ について、Wilsonスコア区間（95%）は
+  [0.398, 0.693] となる。
+  ※論文では「試行数が小さいため区間が広い」点を明記する。
+
+4.2.3 ベースライン比較（参考）
+- 期待ラベルの最大頻度は MALFUNCTION=10/40 であるため、
+  「常にMALFUNCTIONと予測する」多数派ベースラインは Accuracy=0.25。
+- 今回の avg_accuracy=0.55 は多数派ベースラインを上回る。
+
+4.3 各回の結果（R01〜R10）
+※ 表記: run_id: correct/4（誤り: 期待→推定）
+- R01: 2/4（FL: TRAPPED→NONE, RL: BURIED→MALFUNCTION）
+- R02: 3/4（FR: BURIED→NONE）
+- R03: 2/4（FR: TANGLED→MALFUNCTION, RR: TRAPPED→TANGLED）
+- R04: 1/4（FL: BURIED→NONE, FR: BURIED→NONE, RL: TANGLED→NONE）
+- R05: 2/4（RL: BURIED→NONE, RR: BURIED→NONE）
+- R06: 4/4（誤りなし）
+- R07: 3/4（RR: TANGLED→NONE）
+- R08: 3/4（RL: TANGLED→NONE）
+- R09: 0/4（FL: TRAPPED→NONE, FR: TRAPPED→NONE, RL: TRAPPED→TANGLED, RR: BURIED→TRAPPED）
+- R10: 2/4（FR: TRAPPED→TANGLED, RR: TRAPPED→NONE）
+
+4.4 脚ごとのAccuracy（各10回=10脚分）
+- FL: 7/10 = 0.70
+- FR: 5/10 = 0.50
+- RL: 5/10 = 0.50
+- RR: 5/10 = 0.50
+
+4.5 原因ラベル分布と誤り傾向（全40脚）
+- 期待ラベル（expected）分布: TRAPPED=9, NONE=9, BURIED=7, MALFUNCTION=10, TANGLED=5
+- 推定ラベル（cause_final）分布: NONE=21, MALFUNCTION=12, TANGLED=4, TRAPPED=3
+- 代表的な誤分類（多い順）: BURIED→NONE（5）, TRAPPED→NONE（4）, TRAPPED→TANGLED（3）, TANGLED→NONE（3）
+
+4.6 原因ラベル別 指標（期待=Recall, 推定=Precision）
+- NONE: recall=9/9=1.000 | precision=9/21=0.429
+- BURIED: recall=0/7=0.000 | precision=0/0=N/A
+- TRAPPED: recall=2/9=0.222 | precision=2/3=0.667
+- TANGLED: recall=1/5=0.200 | precision=1/4=0.250
+- MALFUNCTION: recall=10/10=1.000 | precision=10/12=0.833
+
+4.7 MALFUNCTION判定（40脚内）
+- recall（期待MALFUNCTIONを当てた割合）: 10/10 = 1.000
+- false positive（期待!=MALFUNCTIONだが推定MALFUNCTION）: 2件
+- false negative（期待=MALFUNCTIONだが推定!=MALFUNCTION）: 0件
+
+4.8 Qwen（LLM）使用状況の注記（重要）
+- sessions.jsonl を確認すると、少なくとも本seed=309594852のセッションでは
+  各脚の p_llm が p_drone と一致している（確認した範囲）。
+- これは「Qwen推論が無効（QWEN_ENABLE=0等）でフォールバックが動作した」または
+  「LLM推論を行わず観測分布をそのまま p_llm として採用した」状態に整合する。
+- 従って本節（4章）の精度は、主に drone_observer + Step7ルールの性能を反映している。
+  LLMの有効性（ON/OFF比較）を論文で主張するには、QWEN_ENABLE=1の条件で同一手順の追加実験が必要。
+
+5. 研究結果B: 所要時間（段階別内訳; run10での確認）
+5.1 run_webotsの実行時間（10回）
+対象: webots_new/benchmarks/run10_webots/run_20260117_040235_seed20260117.json
+- elapsed_sec（n=10）: min=17.466, max=22.236, mean=19.753, median=20.410, stdev=1.620
+
+5.2 段階別計測の読み方
+- timing_total_sは、各脚について「そのセッション内で実行された複数trial（例: 6回分）」の合計である。
+- 本節では、直近10セッション（=run10の10回分）を対象に、
+  (i) 1セッションあたり（4脚合計）の平均
+  (ii) 1脚あたり（その脚の6trial合計）の平均
+を提示する。
+
+5.3 段階別内訳（10セッション平均, 4脚合計）
+※ 下記は「親ステップ（重複なし）」での内訳。other_overheadは計測外の雑費分（関数呼び出し等）である。
+- complete_trial_total: 0.004893 s / セッション
+- drone_observer_process_trial: 0.002955 s（60.4%）
+- final_infer_total: 0.000796 s（16.3%）
+- spot_self_diagnosis_finalize_leg: 0.000480 s（9.8%）
+- spot_self_diagnosis_record_raw: 0.000364 s（7.4%）
+- spot_feature_attach: 0.000062 s（1.3%）
+- logger_log_trial: 0.000028 s（0.6%）
+- p_can_compute: 0.000014 s（0.3%）
+- other_overhead: 0.000194 s（4.0%）
+
+5.4 参考: final_infer_totalの内部内訳（10セッション平均, 4脚合計）
+※ final_infer_totalの中でさらにサブ計測している（親子関係なので、親と子を足し合わせない）。
+- llm_qwen_infer: 0.000357 s（final_infer_totalの44.8%）
+- rule_based_decision: 0.000092 s（final_infer_totalの11.6%）
+
+5.5 run全体時間に対する割合
+- 計測された診断計算時間（complete_trial_totalの4脚合計/セッション平均）0.004893s は、
+  run全体の平均elapsed_sec=19.753sに対して約0.0248%であり、run時間の大部分はWebotsシミュレーション側の進行・起動/終了オーバーヘッド等が支配的である。
+
+6. 再現手順
+6.1 精度集計（result10）
+cd webots_new
+./result10 --file benchmarks/run10_webots/run_20260116_202349_seed309594852.json --json \
+  > benchmarks/run10_webots/run_20260116_202349_seed309594852_result10.json
+
+6.2 所要時間（段階別timing_*の出力確認）
+cd webots_new
+./run10_webots --runs 10 --seed 20260117 --envs NONE
+
+7. 論文構成（案）に対する情報の充足度（更新）
+【6. 研究結果】
+- 6.1: あり（4.3）
+- 6.2: あり（4.2, 4.4）
+- 6.3: 一部あり（4.3, 4.5。体系的なパターン分類は論文側で定義が必要）
+- 6.4: あり（4.5〜4.7）
+- 6.5: 不足（QWEN_ENABLE=0/1の比較実験が必要）
+- 6.6: あり（4.7）
+- 6.7: あり（5.1〜5.5。段階別内訳を提示可能）
+- 6.8: 不足（画像パスが未保存。image_pathを埋める/スナップショット保存の設計が必要）
+
+【7. 考察】
+- 7.7: あり（5.5の「run時間の支配要因」まで説明可能。Qwen有効時の所要時間は別途追加実験が望ましい）

@@ -13,14 +13,15 @@
 まで漏れなく説明する。
 
 本マニュアルの運用方針（前提）
-- 実行・検証・結果確認は、以下3つのスクリプトのみを使用する。
-  1) set_environment
-  2) run_webots
-  3) result
+- 検証（反復実行）と結果集計は、以下2つのスクリプトのみを使用する。
+  1) run10_webots（ランダム環境での反復実行 + 実行条件JSONの保存）
+  2) result10（run10_webotsのJSONとセッションログを突合し精度を集計）
+- run10_webots は内部で run_webots（→set_environment）を呼び出すが、
+  ユーザ操作としては run10_webots / result10 のみを用いる。
 
 範囲に含めるもの：
-- 実行入口：run_webots / result
-- 環境変更：set_environment（scenario.ini と worlds/sotuken_world.wbt の更新）
+- 実行入口：run10_webots / result10
+- 内部処理（run10_webots が利用）：run_webots / set_environment
 - Webots コントローラ：
   - controllers/spot_self_diagnosis/spot_self_diagnosis.py（Spot側：自己診断）
   - controllers/drone_circular_controller/drone_circular_controller.py（Drone側：観測＋集約）
@@ -36,8 +37,10 @@
 1. ディレクトリ構成（webots_new/）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 webots_new/
-  run_webots                : GUI起動用の簡易ランチャ（環境設定も可能）
-  set_environment            : 環境（NONE/BURIED/TRAPPED/TANGLED/MALFUNCTION）を反映する設定ツール
+  run10_webots              : 検証用メイン（既定10回）。ランダム環境を生成し run_webots を反復起動、条件JSONを保存
+  result10                  : 検証用メイン。run10_webotsの条件JSONとセッションログを突合し、各回Accuracyと平均を表示
+  run_webots                : 内部用。Webotsを起動（必要なら set_environment を実行）。--headless/--stream 等に対応
+  set_environment            : 内部用。脚ごとの環境（NONE/BURIED/TRAPPED/TANGLED/MALFUNCTION）を world/ini に反映
   config/scenario.ini        : 環境ラベル・物理パラメータ等（脚ごとの正解ラベルもここに残る）
   worlds/sotuken_world.wbt   : ワールド（Spot/Drone/障害物：埋没箱・トラップ・蔓）
   controllers/
@@ -55,11 +58,11 @@ webots_new/
       utils.py                : JSONL追記・確率正規化など
       fusion.py               : 確率分布の最大ラベル選択（現行は未使用だが互換で残存）
   controllers/drone_circular_controller/logs/
-    leg_diagnostics_sessions.jsonl : セッション単位の最終結果（result が参照）
+    leg_diagnostics_sessions.jsonl : セッション単位の最終結果（result10 が参照。result も参照可能）
     leg_diagnostics_events.jsonl   : 試行単位の詳細ログ（環境変数で有効化した場合のみ）
 
 補助スクリプト：
-- webots_new/result : 直近セッションの p_rule / p_llm / cause_final / 精度 を表示する CLI
+- webots_new/result : 直近セッションの表示（参考）。検証・集計では使用しない（result10 を使用）。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -68,7 +71,7 @@ webots_new/
 2.1 Webots
 - コマンド `webots` が PATH 上にあること。
 - GUI起動は DISPLAY/WAYLAND が必要。
-- GUI不可環境では run_webots の `--stream` を利用可能。
+- GUI不可環境では run10_webots の `--stream`（内部で run_webots --stream）を利用可能。
 
 2.2 Python
 - Python3 が動くこと。
@@ -82,78 +85,66 @@ webots_new/
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-3. 実行方法（set_environment / run_webots / result のみで実行・検証）
+3. 実行方法（run10_webots / result10 のみで検証・集計）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-3.1 そのままGUI起動
-- webots_new/ で以下：
-  ./run_webots
+3.1 検証の実行（run10_webots）
+run10_webots は、各回で FL/FR/RL/RR にランダムな環境ラベルを割り当て、
+その割り当てを引数として run_webots を起動することを、指定回数（既定10回）繰り返す。
 
-run_webots の動作
-- 実行コマンドは基本 `webots --stdout --stderr worlds/sotuken_world.wbt`。
-- 事前に以下の環境変数が設定されていた場合、GUI表示のため解除する：
-  - WEBOTS_HEADLESS / WEBOTS_DISABLE_GUI / QT_QPA_PLATFORM
+最小実行（既定10回、既定は映像なし=headless）
+  ./run10_webots
 
-3.2 起動前に環境を設定してGUI起動
-- 引数を 4つ与えると set_environment を実行してから Webots を起動する。
-  ./run_webots NONE BURIED TRAPPED NONE
+再現性のため seed 固定
+  ./run10_webots --seed 1
 
-引数の順序（固定）
-- FL FR RL RR
+環境候補を制限（例：故障を除外）
+  ./run10_webots --envs NONE BURIED TRAPPED TANGLED
 
-3.3 GUI不可環境での映像確認（ストリーミング）
-- run_webots に `--stream` を付ける。
-  ./run_webots --stream
-  ./run_webots --stream --stream-port 20000
+GUI/映像ありで起動
+  ./run10_webots --gui
 
-3.4 結果表示（直近 or 指定セッション）
-- 直近を表示
-  ./result
+GUI不可環境向け（Webotsストリーミング）
+  ./run10_webots --stream --stream-port 20000
 
-- セッションID指定
-  ./result --session <session_id>
+ログ取得（run_webots/Webots の stdout/stderr をファイルに保存）
+  ./run10_webots --capture-logs
 
-result の表示項目（脚FL/FR/RL/RRごと）
-- p_rule（ルール最終 one-hot）
-- p_llm（Qwen/フォールバックで得た確率分布）
-- cause_final（最終ラベル。expected と一致なら緑、違えば赤）
-- Accuracy: correct/4
+run10_webots の出力（実行条件JSON）
+- webots_new/benchmarks/run10_webots/run_<timestamp>_seed<seed>.json
+  - 各回の expected（FL/FR/RL/RRに割り当てた正解ラベル）と開始/終了時刻を記録する。
 
+3.2 検証結果の集計（result10）
+result10 は、run10_webots の出力JSONと、セッションログ
+controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl を突合し、
+各回の Accuracy と平均Accuracy を表示する。
 
-3.5 検証手順（3スクリプト×10回の反復実行）
+直近の run10_webots を集計
+  ./result10
+
+出力JSONを指定して集計
+  ./result10 --file benchmarks/run10_webots/run_YYYYmmdd_HHMMSS_seedX.json
+
+Accuracy の定義（result10 が計算する値）
+- 1回（1 run_id）につき、4脚（FL/FR/RL/RR）のうち expected_cause と cause_final が一致した脚数を correct とする。
+- 各回の Accuracy は `correct/4`。
+- 平均Accuracy は、10回の合計で `sum_correct / sum_total`（= (c1+...+c10)/(4*10)）として表示される。
+
+3.3 検証の有効性評価（10回反復）
 本研究では、シミュレーション（物理計算・初期条件の微小差）による揺らぎを考慮し、
-以下の「同一手順」を 10 回繰り返し、その精度から有効性を評価する。
-
-1回分（1試行）の実行手順（必ずこの3つだけを使う）
-1) set_environment で正解環境（脚ごとのラベル）を設定
-   例：
-     ./set_environment NONE BURIED TRAPPED NONE
-   ※引数順は FL FR RL RR
-
-2) run_webots でシミュレーションを起動し、Spot/Droneコントローラの診断を完走させる
-   ./run_webots
-
-3) result で直近セッションの Accuracy を確認し、記録する
-   ./result
-
-Accuracy の定義（result が表示する値）
-- 1回の試行で、4脚（FL/FR/RL/RR）のうち「expected_cause と cause_final が一致した脚数」を correct とする。
-- Accuracy は `correct/4`（例：3/4=0.75）である。
-
-10回実行による有効性評価（集計）
-- 10回の各試行で得た correct を c1..c10 とすると、平均精度は次で求められる。
-  平均Accuracy = (c1 + c2 + ... + c10) / (4 * 10)
-- 併せて、各回の Accuracy（c_i/4）を表にして分散（ばらつき）を示すと、再現性の評価になる。
+run10_webots で 10 回の反復実行を行い、result10 が出力する平均Accuracyにより有効性を評価する。
 
 実行の注意（再現性のための運用）
-- 各回は必ず Webots を終了（コントローラが simulationQuit で終了）させてから次へ進む。
-- 直前の結果は controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl の末尾に追記され、
-  result はそれを「直近セッション」として参照する。
+- 各回は、Webots/コントローラが終了（simulationQuit）してから次の回へ進む。
+- run10_webots は内部で run_webots（→set_environment）を呼ぶが、検証手順としては run10_webots/result10 のみを使用する。
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 4. 環境設定ツール set_environment（脚ごとの拘束条件の反映）
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 対象ファイル：webots_new/set_environment
+
+注意
+- 検証手順としては set_environment を直接実行しない（run10_webots が内部で使用する）。
 
 4.1 入力と検証
 - 使い方：
