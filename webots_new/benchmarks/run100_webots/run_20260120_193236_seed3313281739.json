@@ -1,0 +1,1418 @@
+{
+  "schema": "run100_webots/v1",
+  "created_at": "2026-01-20T19:32:36+09:00",
+  "seed": 3313281739,
+  "runs": 100,
+  "envs": [
+    "NONE",
+    "BURIED",
+    "TRAPPED",
+    "TANGLED",
+    "MALFUNCTION"
+  ],
+  "run_webots": "/home/kk21053/sotuken/webots_new/run_webots",
+  "dry_run": false,
+  "capture_logs": false,
+  "records": [
+    {
+      "run_id": "R001",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:32:36+09:00",
+      "ended_at": "2026-01-20T19:33:21+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 45.05991744995117,
+      "log_path": null
+    },
+    {
+      "run_id": "R002",
+      "expected": {
+        "FL": "NONE",
+        "FR": "NONE",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:33:21+09:00",
+      "ended_at": "2026-01-20T19:33:41+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.976975917816162,
+      "log_path": null
+    },
+    {
+      "run_id": "R003",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:33:41+09:00",
+      "ended_at": "2026-01-20T19:33:59+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.367828845977783,
+      "log_path": null
+    },
+    {
+      "run_id": "R004",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "MALFUNCTION",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:33:59+09:00",
+      "ended_at": "2026-01-20T19:34:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.763035535812378,
+      "log_path": null
+    },
+    {
+      "run_id": "R005",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:34:20+09:00",
+      "ended_at": "2026-01-20T19:34:38+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.329670906066895,
+      "log_path": null
+    },
+    {
+      "run_id": "R006",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:34:38+09:00",
+      "ended_at": "2026-01-20T19:35:01+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.634156703948975,
+      "log_path": null
+    },
+    {
+      "run_id": "R007",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:35:01+09:00",
+      "ended_at": "2026-01-20T19:35:25+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 23.619837760925293,
+      "log_path": null
+    },
+    {
+      "run_id": "R008",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "BURIED",
+        "RL": "BURIED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:35:25+09:00",
+      "ended_at": "2026-01-20T19:35:46+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.882415771484375,
+      "log_path": null
+    },
+    {
+      "run_id": "R009",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:35:46+09:00",
+      "ended_at": "2026-01-20T19:36:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.12830948829651,
+      "log_path": null
+    },
+    {
+      "run_id": "R010",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "MALFUNCTION",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:36:07+09:00",
+      "ended_at": "2026-01-20T19:36:25+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.380385637283325,
+      "log_path": null
+    },
+    {
+      "run_id": "R011",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:36:25+09:00",
+      "ended_at": "2026-01-20T19:37:50+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 85.1080048084259,
+      "log_path": null
+    },
+    {
+      "run_id": "R012",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:37:50+09:00",
+      "ended_at": "2026-01-20T19:38:08+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.2938232421875,
+      "log_path": null
+    },
+    {
+      "run_id": "R013",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:38:08+09:00",
+      "ended_at": "2026-01-20T19:39:01+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 52.773831844329834,
+      "log_path": null
+    },
+    {
+      "run_id": "R014",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "BURIED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:39:01+09:00",
+      "ended_at": "2026-01-20T19:39:22+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.778821229934692,
+      "log_path": null
+    },
+    {
+      "run_id": "R015",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:39:22+09:00",
+      "ended_at": "2026-01-20T19:39:41+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.209792137145996,
+      "log_path": null
+    },
+    {
+      "run_id": "R016",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:39:41+09:00",
+      "ended_at": "2026-01-20T19:40:01+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.944392681121826,
+      "log_path": null
+    },
+    {
+      "run_id": "R017",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:40:01+09:00",
+      "ended_at": "2026-01-20T19:40:22+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.857100009918213,
+      "log_path": null
+    },
+    {
+      "run_id": "R018",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:40:22+09:00",
+      "ended_at": "2026-01-20T19:40:42+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.3082754611969,
+      "log_path": null
+    },
+    {
+      "run_id": "R019",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:40:42+09:00",
+      "ended_at": "2026-01-20T19:41:02+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.65699052810669,
+      "log_path": null
+    },
+    {
+      "run_id": "R020",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:41:02+09:00",
+      "ended_at": "2026-01-20T19:41:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 17.943034410476685,
+      "log_path": null
+    },
+    {
+      "run_id": "R021",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "NONE",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:41:20+09:00",
+      "ended_at": "2026-01-20T19:41:40+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.24256992340088,
+      "log_path": null
+    },
+    {
+      "run_id": "R022",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:41:40+09:00",
+      "ended_at": "2026-01-20T19:41:59+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.166962385177612,
+      "log_path": null
+    },
+    {
+      "run_id": "R023",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:41:59+09:00",
+      "ended_at": "2026-01-20T19:42:37+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 37.883363485336304,
+      "log_path": null
+    },
+    {
+      "run_id": "R024",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:42:37+09:00",
+      "ended_at": "2026-01-20T19:42:57+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.884846687316895,
+      "log_path": null
+    },
+    {
+      "run_id": "R025",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:42:57+09:00",
+      "ended_at": "2026-01-20T19:43:22+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 25.000500679016113,
+      "log_path": null
+    },
+    {
+      "run_id": "R026",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:43:22+09:00",
+      "ended_at": "2026-01-20T19:44:02+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 39.48340702056885,
+      "log_path": null
+    },
+    {
+      "run_id": "R027",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:44:02+09:00",
+      "ended_at": "2026-01-20T19:44:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.585113763809204,
+      "log_path": null
+    },
+    {
+      "run_id": "R028",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:44:20+09:00",
+      "ended_at": "2026-01-20T19:44:40+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.009509563446045,
+      "log_path": null
+    },
+    {
+      "run_id": "R029",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "MALFUNCTION",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:44:40+09:00",
+      "ended_at": "2026-01-20T19:45:03+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 23.17087459564209,
+      "log_path": null
+    },
+    {
+      "run_id": "R030",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:45:03+09:00",
+      "ended_at": "2026-01-20T19:45:22+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.572521209716797,
+      "log_path": null
+    },
+    {
+      "run_id": "R031",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "MALFUNCTION",
+        "RL": "BURIED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:45:22+09:00",
+      "ended_at": "2026-01-20T19:45:46+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 23.645025730133057,
+      "log_path": null
+    },
+    {
+      "run_id": "R032",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:45:46+09:00",
+      "ended_at": "2026-01-20T19:46:32+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 45.98284959793091,
+      "log_path": null
+    },
+    {
+      "run_id": "R033",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "BURIED",
+        "RL": "MALFUNCTION",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:46:32+09:00",
+      "ended_at": "2026-01-20T19:46:51+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.75173854827881,
+      "log_path": null
+    },
+    {
+      "run_id": "R034",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "NONE",
+        "RL": "NONE",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:46:51+09:00",
+      "ended_at": "2026-01-20T19:47:10+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.290754318237305,
+      "log_path": null
+    },
+    {
+      "run_id": "R035",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:47:10+09:00",
+      "ended_at": "2026-01-20T19:47:29+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.605446338653564,
+      "log_path": null
+    },
+    {
+      "run_id": "R036",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:47:29+09:00",
+      "ended_at": "2026-01-20T19:47:49+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.697717666625977,
+      "log_path": null
+    },
+    {
+      "run_id": "R037",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TANGLED",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:47:49+09:00",
+      "ended_at": "2026-01-20T19:48:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.33058762550354,
+      "log_path": null
+    },
+    {
+      "run_id": "R038",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "MALFUNCTION",
+        "RL": "BURIED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:48:07+09:00",
+      "ended_at": "2026-01-20T19:48:29+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.38944673538208,
+      "log_path": null
+    },
+    {
+      "run_id": "R039",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:48:29+09:00",
+      "ended_at": "2026-01-20T19:48:48+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.092872381210327,
+      "log_path": null
+    },
+    {
+      "run_id": "R040",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:48:48+09:00",
+      "ended_at": "2026-01-20T19:49:11+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.823469638824463,
+      "log_path": null
+    },
+    {
+      "run_id": "R041",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:49:11+09:00",
+      "ended_at": "2026-01-20T19:49:35+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 24.717487812042236,
+      "log_path": null
+    },
+    {
+      "run_id": "R042",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:49:35+09:00",
+      "ended_at": "2026-01-20T19:49:54+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.693560123443604,
+      "log_path": null
+    },
+    {
+      "run_id": "R043",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:49:54+09:00",
+      "ended_at": "2026-01-20T19:50:14+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.84774136543274,
+      "log_path": null
+    },
+    {
+      "run_id": "R044",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:50:14+09:00",
+      "ended_at": "2026-01-20T19:50:33+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.621388912200928,
+      "log_path": null
+    },
+    {
+      "run_id": "R045",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "MALFUNCTION",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:50:33+09:00",
+      "ended_at": "2026-01-20T19:50:54+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.06319260597229,
+      "log_path": null
+    },
+    {
+      "run_id": "R046",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:50:54+09:00",
+      "ended_at": "2026-01-20T19:51:13+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.752716541290283,
+      "log_path": null
+    },
+    {
+      "run_id": "R047",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "BURIED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:51:13+09:00",
+      "ended_at": "2026-01-20T19:51:35+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.022542715072632,
+      "log_path": null
+    },
+    {
+      "run_id": "R048",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "MALFUNCTION",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:51:35+09:00",
+      "ended_at": "2026-01-20T19:51:55+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.66446566581726,
+      "log_path": null
+    },
+    {
+      "run_id": "R049",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:51:55+09:00",
+      "ended_at": "2026-01-20T19:52:14+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.758596181869507,
+      "log_path": null
+    },
+    {
+      "run_id": "R050",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:52:14+09:00",
+      "ended_at": "2026-01-20T19:52:43+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 28.729854345321655,
+      "log_path": null
+    },
+    {
+      "run_id": "R051",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:52:43+09:00",
+      "ended_at": "2026-01-20T19:53:02+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.615397453308105,
+      "log_path": null
+    },
+    {
+      "run_id": "R052",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:53:02+09:00",
+      "ended_at": "2026-01-20T19:53:22+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.620360136032104,
+      "log_path": null
+    },
+    {
+      "run_id": "R053",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:53:22+09:00",
+      "ended_at": "2026-01-20T19:53:41+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.66697883605957,
+      "log_path": null
+    },
+    {
+      "run_id": "R054",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "NONE",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:53:41+09:00",
+      "ended_at": "2026-01-20T19:54:01+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.437806367874146,
+      "log_path": null
+    },
+    {
+      "run_id": "R055",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "TANGLED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:54:01+09:00",
+      "ended_at": "2026-01-20T19:54:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.227700233459473,
+      "log_path": null
+    },
+    {
+      "run_id": "R056",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:54:20+09:00",
+      "ended_at": "2026-01-20T19:54:45+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 25.045538902282715,
+      "log_path": null
+    },
+    {
+      "run_id": "R057",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:54:45+09:00",
+      "ended_at": "2026-01-20T19:55:03+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.117074012756348,
+      "log_path": null
+    },
+    {
+      "run_id": "R058",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:55:03+09:00",
+      "ended_at": "2026-01-20T19:55:23+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.937864065170288,
+      "log_path": null
+    },
+    {
+      "run_id": "R059",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:55:23+09:00",
+      "ended_at": "2026-01-20T19:55:43+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.720301151275635,
+      "log_path": null
+    },
+    {
+      "run_id": "R060",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T19:55:43+09:00",
+      "ended_at": "2026-01-20T19:56:04+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.630362033843994,
+      "log_path": null
+    },
+    {
+      "run_id": "R061",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "MALFUNCTION",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:56:04+09:00",
+      "ended_at": "2026-01-20T19:56:23+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.8171603679657,
+      "log_path": null
+    },
+    {
+      "run_id": "R062",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:56:23+09:00",
+      "ended_at": "2026-01-20T19:56:42+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.509844541549683,
+      "log_path": null
+    },
+    {
+      "run_id": "R063",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "BURIED",
+        "RL": "NONE",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:56:42+09:00",
+      "ended_at": "2026-01-20T19:57:02+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.823208808898926,
+      "log_path": null
+    },
+    {
+      "run_id": "R064",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:57:02+09:00",
+      "ended_at": "2026-01-20T19:57:24+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.400924682617188,
+      "log_path": null
+    },
+    {
+      "run_id": "R065",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T19:57:24+09:00",
+      "ended_at": "2026-01-20T19:58:50+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 85.41515946388245,
+      "log_path": null
+    },
+    {
+      "run_id": "R066",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:58:50+09:00",
+      "ended_at": "2026-01-20T19:59:10+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.19351053237915,
+      "log_path": null
+    },
+    {
+      "run_id": "R067",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T19:59:10+09:00",
+      "ended_at": "2026-01-20T19:59:28+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.261127710342407,
+      "log_path": null
+    },
+    {
+      "run_id": "R068",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T19:59:28+09:00",
+      "ended_at": "2026-01-20T19:59:48+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.478602409362793,
+      "log_path": null
+    },
+    {
+      "run_id": "R069",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TANGLED",
+        "RL": "MALFUNCTION",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T19:59:48+09:00",
+      "ended_at": "2026-01-20T20:00:06+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.12287735939026,
+      "log_path": null
+    },
+    {
+      "run_id": "R070",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:00:06+09:00",
+      "ended_at": "2026-01-20T20:00:25+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.495027780532837,
+      "log_path": null
+    },
+    {
+      "run_id": "R071",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:00:25+09:00",
+      "ended_at": "2026-01-20T20:00:47+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.484680891036987,
+      "log_path": null
+    },
+    {
+      "run_id": "R072",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:00:47+09:00",
+      "ended_at": "2026-01-20T20:01:06+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.335503339767456,
+      "log_path": null
+    },
+    {
+      "run_id": "R073",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:01:06+09:00",
+      "ended_at": "2026-01-20T20:01:50+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 44.45690727233887,
+      "log_path": null
+    },
+    {
+      "run_id": "R074",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "NONE",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T20:01:50+09:00",
+      "ended_at": "2026-01-20T20:02:11+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.810604095458984,
+      "log_path": null
+    },
+    {
+      "run_id": "R075",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "BURIED",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:02:11+09:00",
+      "ended_at": "2026-01-20T20:02:53+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 41.621631145477295,
+      "log_path": null
+    },
+    {
+      "run_id": "R076",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "NONE",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:02:53+09:00",
+      "ended_at": "2026-01-20T20:03:13+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.263962507247925,
+      "log_path": null
+    },
+    {
+      "run_id": "R077",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:03:13+09:00",
+      "ended_at": "2026-01-20T20:03:36+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 23.17570447921753,
+      "log_path": null
+    },
+    {
+      "run_id": "R078",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:03:36+09:00",
+      "ended_at": "2026-01-20T20:04:06+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 29.980211973190308,
+      "log_path": null
+    },
+    {
+      "run_id": "R079",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T20:04:06+09:00",
+      "ended_at": "2026-01-20T20:04:27+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.925584077835083,
+      "log_path": null
+    },
+    {
+      "run_id": "R080",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:04:27+09:00",
+      "ended_at": "2026-01-20T20:04:47+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.211687088012695,
+      "log_path": null
+    },
+    {
+      "run_id": "R081",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "NONE",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:04:47+09:00",
+      "ended_at": "2026-01-20T20:05:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.368412971496582,
+      "log_path": null
+    },
+    {
+      "run_id": "R082",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "MALFUNCTION",
+        "RL": "BURIED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:05:07+09:00",
+      "ended_at": "2026-01-20T20:05:28+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.044636726379395,
+      "log_path": null
+    },
+    {
+      "run_id": "R083",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:05:28+09:00",
+      "ended_at": "2026-01-20T20:05:46+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.371442794799805,
+      "log_path": null
+    },
+    {
+      "run_id": "R084",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T20:05:46+09:00",
+      "ended_at": "2026-01-20T20:06:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.597538709640503,
+      "log_path": null
+    },
+    {
+      "run_id": "R085",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:06:07+09:00",
+      "ended_at": "2026-01-20T20:06:26+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.377509355545044,
+      "log_path": null
+    },
+    {
+      "run_id": "R086",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:06:26+09:00",
+      "ended_at": "2026-01-20T20:07:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 40.4383327960968,
+      "log_path": null
+    },
+    {
+      "run_id": "R087",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:07:07+09:00",
+      "ended_at": "2026-01-20T20:07:25+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 17.957165956497192,
+      "log_path": null
+    },
+    {
+      "run_id": "R088",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "MALFUNCTION",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T20:07:25+09:00",
+      "ended_at": "2026-01-20T20:07:44+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.859763145446777,
+      "log_path": null
+    },
+    {
+      "run_id": "R089",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:07:44+09:00",
+      "ended_at": "2026-01-20T20:08:03+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.06178331375122,
+      "log_path": null
+    },
+    {
+      "run_id": "R090",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "NONE",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:08:03+09:00",
+      "ended_at": "2026-01-20T20:08:44+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 41.46795344352722,
+      "log_path": null
+    },
+    {
+      "run_id": "R091",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TRAPPED",
+        "RL": "BURIED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:08:44+09:00",
+      "ended_at": "2026-01-20T20:09:13+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 28.567362546920776,
+      "log_path": null
+    },
+    {
+      "run_id": "R092",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T20:09:13+09:00",
+      "ended_at": "2026-01-20T20:10:00+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 47.51821255683899,
+      "log_path": null
+    },
+    {
+      "run_id": "R093",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-20T20:10:00+09:00",
+      "ended_at": "2026-01-20T20:10:18+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.24282145500183,
+      "log_path": null
+    },
+    {
+      "run_id": "R094",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "NONE",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T20:10:18+09:00",
+      "ended_at": "2026-01-20T20:10:37+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.31294012069702,
+      "log_path": null
+    },
+    {
+      "run_id": "R095",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:10:37+09:00",
+      "ended_at": "2026-01-20T20:10:56+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 18.96486806869507,
+      "log_path": null
+    },
+    {
+      "run_id": "R096",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TANGLED",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:10:56+09:00",
+      "ended_at": "2026-01-20T20:11:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 24.118708610534668,
+      "log_path": null
+    },
+    {
+      "run_id": "R097",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T20:11:20+09:00",
+      "ended_at": "2026-01-20T20:11:41+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.981796264648438,
+      "log_path": null
+    },
+    {
+      "run_id": "R098",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "TANGLED",
+        "RL": "BURIED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-20T20:11:41+09:00",
+      "ended_at": "2026-01-20T20:12:02+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 21.104581594467163,
+      "log_path": null
+    },
+    {
+      "run_id": "R099",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "TRAPPED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T20:12:02+09:00",
+      "ended_at": "2026-01-20T20:12:21+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.178655862808228,
+      "log_path": null
+    },
+    {
+      "run_id": "R100",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "NONE",
+        "RL": "TANGLED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-20T20:12:21+09:00",
+      "ended_at": "2026-01-20T20:12:41+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 20.054823637008667,
+      "log_path": null
+    }
+  ]
+}

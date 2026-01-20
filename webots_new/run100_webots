@@ -1,0 +1,675 @@
+#!/usr/bin/env python3
+"""run100_webots
+
+「各脚にランダムな環境を設置して run_webots を起動」を指定回数（既定100回）繰り返す。
+
+- 1回ごとに FL/FR/RL/RR へランダムに環境ラベルを割り当てる
+- その割り当てを引数として `run_webots` を起動（run_webots 側が set_environment を実行）
+- 実行条件（seed・割り当て）を JSON に保存する
+
+注意:
+- Webots は通常、ユーザがウィンドウを閉じるまで戻らないため、各回の終了は手動操作になる。
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import os
+import random
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+ROOT = Path(__file__).resolve().parent
+RUN_WEBOTS = ROOT / "run_webots"
+
+LEG_IDS = ["FL", "FR", "RL", "RR"]
+DEFAULT_ENVIRONMENTS = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION"]
+CAUSE_LABELS = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION"]
+
+DEFAULT_SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
+
+
+def _now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    items: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            items.append(json.loads(line))
+        except Exception:
+            continue
+    return items
+
+
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _expected_from_session(session: dict) -> Dict[str, str]:
+    legs = session.get("legs", {}) or {}
+    out: Dict[str, str] = {}
+    for leg in LEG_IDS:
+        entry = legs.get(leg, {}) or {}
+        out[leg] = str(entry.get("expected_cause", ""))
+    return out
+
+
+def _find_matching_session(
+    sessions: List[dict],
+    expected: Dict[str, str],
+    start_dt: Optional[datetime],
+    end_dt: Optional[datetime],
+    used_session_ids: set[str],
+) -> Optional[dict]:
+    candidates: List[dict] = []
+    for s in sessions:
+        sid = str(s.get("session_id", ""))
+        if not sid or sid in used_session_ids:
+            continue
+        if _expected_from_session(s) == expected:
+            candidates.append(s)
+
+    if not candidates:
+        return None
+
+    def ts_of(sess: dict) -> float:
+        try:
+            return float(sess.get("timestamp", 0.0))
+        except Exception:
+            return 0.0
+
+    if start_dt is not None:
+        start_epoch = start_dt.timestamp()
+        end_epoch = end_dt.timestamp() if end_dt is not None else (start_epoch + 6 * 60 * 60)
+
+        lo = start_epoch - 30.0
+        hi = end_epoch + 30.0 * 60.0
+        in_window = [s for s in candidates if lo <= ts_of(s) <= hi]
+        if in_window:
+            return min(in_window, key=lambda s: abs(ts_of(s) - start_epoch))
+
+        return min(candidates, key=lambda s: abs(ts_of(s) - start_epoch))
+
+    return max(candidates, key=ts_of)
+
+
+def _dist_to_cols(prefix: str, dist: Any) -> Dict[str, Optional[float]]:
+    out: Dict[str, Optional[float]] = {f"{prefix}_{lab}": None for lab in CAUSE_LABELS}
+    if not isinstance(dist, dict):
+        return out
+    for lab in CAUSE_LABELS:
+        v = dist.get(lab)
+        try:
+            out[f"{prefix}_{lab}"] = float(v) if v is not None else None
+        except Exception:
+            out[f"{prefix}_{lab}"] = None
+    return out
+
+
+def _qwen_source(entry: dict) -> str:
+    if "qwen_used" not in entry:
+        return "missing"
+    return "qwen" if bool(entry.get("qwen_used")) else "uniform_fallback"
+
+
+def _write_csv_legs(
+    csv_path: Path,
+    records: List[dict],
+    sessions: List[dict],
+) -> Dict[str, Any]:
+    """result100 相当の内容を 1行=1脚 に展開してCSV出力する。"""
+    used: set[str] = set()
+
+    rows: List[Dict[str, Any]] = []
+    qwen_status_counts: Dict[str, int] = {}
+    qwen_used_true = 0
+    qwen_used_false = 0
+    qwen_used_missing = 0
+    legs_total = 0
+
+    for r in records:
+        run_id = str(r.get("run_id", ""))
+        expected = r.get("expected", {}) or {}
+        expected = {k: str(v) for k, v in expected.items()}
+        start_dt = _parse_iso(r.get("started_at"))
+        end_dt = _parse_iso(r.get("ended_at"))
+
+        sess = _find_matching_session(sessions, expected, start_dt, end_dt, used)
+        sid = str(sess.get("session_id", "")) if sess else ""
+        if sid:
+            used.add(sid)
+
+        for leg in LEG_IDS:
+            legs_total += 1
+
+            sess_entry = ((sess or {}).get("legs", {}) or {}).get(leg, {}) or {}
+
+            qwen_status = sess_entry.get("qwen_status")
+            st = str(qwen_status) if qwen_status is not None else ("missing" if "qwen_status" not in sess_entry else "unknown")
+            qwen_status_counts[st] = int(qwen_status_counts.get(st, 0)) + 1
+
+            if "qwen_used" not in sess_entry:
+                qwen_used_missing += 1
+            else:
+                if bool(sess_entry.get("qwen_used")):
+                    qwen_used_true += 1
+                else:
+                    qwen_used_false += 1
+
+            exp = str(sess_entry.get("expected_cause", expected.get(leg, "")) or "")
+            got = str(sess_entry.get("cause_final", "") or "")
+            correct = (exp != "") and (exp == got)
+
+            row: Dict[str, Any] = {
+                "run_id": run_id,
+                "session_id": sid or None,
+                "run_started_at": r.get("started_at"),
+                "run_ended_at": r.get("ended_at"),
+                "expected_FL": expected.get("FL"),
+                "expected_FR": expected.get("FR"),
+                "expected_RL": expected.get("RL"),
+                "expected_RR": expected.get("RR"),
+                "leg_id": leg,
+                "expected_cause": exp,
+                "cause_final": got,
+                "correct": int(bool(correct)),
+                "movement_result": sess_entry.get("movement_result"),
+                "spot_can": sess_entry.get("spot_can"),
+                "drone_can": sess_entry.get("drone_can"),
+                "qwen_used": sess_entry.get("qwen_used"),
+                "qwen_status": sess_entry.get("qwen_status"),
+                "qwen_source": _qwen_source(sess_entry),
+                "p_drone_json": json.dumps(sess_entry.get("p_drone"), ensure_ascii=False) if "p_drone" in sess_entry else None,
+                "p_qwen_json": json.dumps(sess_entry.get("p_qwen"), ensure_ascii=False) if "p_qwen" in sess_entry else None,
+                "p_llm_json": json.dumps(sess_entry.get("p_llm"), ensure_ascii=False) if "p_llm" in sess_entry else None,
+                "p_rule_json": json.dumps(sess_entry.get("p_rule"), ensure_ascii=False) if "p_rule" in sess_entry else None,
+            }
+            row.update(_dist_to_cols("p_drone", sess_entry.get("p_drone")))
+            row.update(_dist_to_cols("p_qwen", sess_entry.get("p_qwen")))
+            row.update(_dist_to_cols("p_llm", sess_entry.get("p_llm")))
+            row.update(_dist_to_cols("p_rule", sess_entry.get("p_rule")))
+            rows.append(row)
+
+    # columns
+    cols: List[str] = [
+        "run_id",
+        "session_id",
+        "run_started_at",
+        "run_ended_at",
+        "expected_FL",
+        "expected_FR",
+        "expected_RL",
+        "expected_RR",
+        "leg_id",
+        "expected_cause",
+        "cause_final",
+        "correct",
+        "movement_result",
+        "spot_can",
+        "drone_can",
+        "qwen_used",
+        "qwen_status",
+        "qwen_source",
+        "p_drone_json",
+        "p_qwen_json",
+        "p_llm_json",
+        "p_rule_json",
+    ]
+    for pref in ["p_drone", "p_qwen", "p_llm", "p_rule"]:
+        cols.extend([f"{pref}_{lab}" for lab in CAUSE_LABELS])
+
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+    return {
+        "legs_total": legs_total,
+        "qwen_used_true": qwen_used_true,
+        "qwen_used_false": qwen_used_false,
+        "qwen_used_missing": qwen_used_missing,
+        "qwen_status_counts": qwen_status_counts,
+    }
+
+
+def _write_csv_summary(
+    csv_path: Path,
+    records: List[dict],
+    sessions: List[dict],
+) -> Dict[str, Any]:
+    used: set[str] = set()
+    rows: List[Dict[str, Any]] = []
+
+    sum_correct = 0
+    sum_total = 0
+    matched = 0
+
+    for r in records:
+        run_id = str(r.get("run_id", ""))
+        expected = r.get("expected", {}) or {}
+        expected = {k: str(v) for k, v in expected.items()}
+        start_dt = _parse_iso(r.get("started_at"))
+        end_dt = _parse_iso(r.get("ended_at"))
+
+        sess = _find_matching_session(sessions, expected, start_dt, end_dt, used)
+        sid = str(sess.get("session_id", "")) if sess else ""
+        if sid:
+            used.add(sid)
+
+        correct = 0
+        total = 0
+        if sess is not None:
+            legs = sess.get("legs", {}) or {}
+            for leg in LEG_IDS:
+                e = legs.get(leg, {}) or {}
+                exp = str(e.get("expected_cause", ""))
+                got = str(e.get("cause_final", ""))
+                total += 1
+                if exp and exp == got:
+                    correct += 1
+            matched += 1
+        else:
+            total = 4
+
+        sum_correct += correct
+        sum_total += total
+
+        rows.append(
+            {
+                "row_type": "run",
+                "run_id": run_id,
+                "session_id": sid or None,
+                "matched": int(sess is not None),
+                "correct": correct if sess is not None else None,
+                "total": total,
+                "accuracy": (correct / total) if (sess is not None and total) else None,
+                "expected_FL": expected.get("FL"),
+                "expected_FR": expected.get("FR"),
+                "expected_RL": expected.get("RL"),
+                "expected_RR": expected.get("RR"),
+            }
+        )
+
+    rows.append(
+        {
+            "row_type": "total",
+            "run_id": None,
+            "session_id": None,
+            "matched": matched,
+            "correct": sum_correct,
+            "total": sum_total,
+            "accuracy": (sum_correct / sum_total) if sum_total else None,
+            "expected_FL": None,
+            "expected_FR": None,
+            "expected_RL": None,
+            "expected_RR": None,
+        }
+    )
+
+    cols = [
+        "row_type",
+        "run_id",
+        "session_id",
+        "matched",
+        "correct",
+        "total",
+        "accuracy",
+        "expected_FL",
+        "expected_FR",
+        "expected_RL",
+        "expected_RR",
+    ]
+    with csv_path.open("w", encoding="utf-8", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
+        w.writeheader()
+        w.writerows(rows)
+
+    return {"matched": matched, "total_correct": sum_correct, "total": sum_total}
+
+
+def _validate_env_list(values: List[str]) -> List[str]:
+    envs = [v.strip().upper() for v in values if v.strip()]
+    unknown = sorted({e for e in envs if e not in DEFAULT_ENVIRONMENTS})
+    if unknown:
+        raise ValueError(
+            "無効な環境が含まれています: "
+            + ", ".join(unknown)
+            + "（有効: "
+            + ", ".join(DEFAULT_ENVIRONMENTS)
+            + "）"
+        )
+    if not envs:
+        raise ValueError("環境候補が空です")
+    return envs
+
+
+def _default_seed() -> int:
+    return int.from_bytes(os.urandom(4), "big")
+
+
+@dataclass
+class RunRecord:
+    run_id: str
+    expected: Dict[str, str]
+    started_at: str
+    ended_at: Optional[str] = None
+    exit_code: Optional[int] = None
+    elapsed_sec: Optional[float] = None
+    log_path: Optional[str] = None
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="run100_webots",
+        description="各脚へランダム環境を設定して run_webots を複数回起動します（既定100回、既定は映像なし）",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=100,
+        help="繰り返し回数（既定: 100）",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="乱数seed（省略時はランダム）",
+    )
+    parser.add_argument(
+        "--envs",
+        nargs="+",
+        default=DEFAULT_ENVIRONMENTS,
+        help="環境候補（例: --envs NONE BURIED TRAPPED）",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="環境割り当てだけ生成して起動しない",
+    )
+    parser.add_argument(
+        "--capture-logs",
+        action="store_true",
+        help="run_webots/Webots の stdout/stderr をファイルへ保存する",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="エラーが出ても次の回へ進む（既定は停止）",
+    )
+
+    # Qwen(LLM) オプション（diagnostics_pipeline/llm_client.py が参照する環境変数）
+    parser.add_argument(
+        "--qwen-enable",
+        action="store_true",
+        help="QWEN_ENABLE=1 を有効化して実行する（モデルパスは --qwen-gguf-path か環境変数で指定）",
+    )
+    parser.add_argument(
+        "--qwen-gguf-path",
+        type=str,
+        default=None,
+        help="QWEN_GGUF_PATH を指定（.gguf）。省略時は環境変数 QWEN_GGUF_PATH を使用",
+    )
+
+    # run_webots のオプションを透過
+    parser.add_argument("--stream", action="store_true", help="run_webots の --stream を付与")
+    parser.add_argument(
+        "--stream-port",
+        type=int,
+        default=None,
+        help="run_webots の --stream-port を付与",
+    )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="GUI/映像ありで起動する（既定は --headless 相当で映像なし）",
+    )
+    parser.add_argument(
+        "--gui-console",
+        action="store_true",
+        help="run_webots の --gui-console を付与（非推奨）",
+    )
+
+    args = parser.parse_args()
+
+    if args.runs <= 0:
+        print("エラー: --runs は 1 以上で指定してください")
+        sys.exit(2)
+
+    if not RUN_WEBOTS.exists():
+        print(f"エラー: run_webots が見つかりません: {RUN_WEBOTS}")
+        sys.exit(2)
+
+    try:
+        env_candidates = _validate_env_list(list(args.envs))
+    except ValueError as e:
+        print(f"エラー: {e}")
+        sys.exit(2)
+
+    seed = args.seed if args.seed is not None else _default_seed()
+    rng = random.Random(seed)
+
+    out_dir = ROOT / "benchmarks" / "run100_webots"
+    logs_dir = out_dir / "logs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_json = out_dir / f"run_{timestamp}_seed{seed}.json"
+
+    meta = {
+        "schema": "run100_webots/v1",
+        "created_at": _now_iso(),
+        "seed": seed,
+        "runs": args.runs,
+        "envs": env_candidates,
+        "run_webots": str(RUN_WEBOTS),
+        "dry_run": bool(args.dry_run),
+        "capture_logs": bool(args.capture_logs),
+        "qwen": {
+            "enabled": bool(args.qwen_enable),
+            "gguf_path": (args.qwen_gguf_path or os.getenv("QWEN_GGUF_PATH", "") or None),
+        },
+        "records": [],
+    }
+
+    def flush() -> None:
+        out_json.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+
+    flush()
+
+    passthrough: List[str] = []
+
+    # 既定は映像なし（headless）。明示的に --gui か --stream の場合のみ映像あり。
+    headless = (not args.gui) and (not args.stream)
+    if headless:
+        passthrough.append("--headless")
+
+    if args.stream:
+        passthrough.append("--stream")
+    if args.stream_port is not None:
+        passthrough.extend(["--stream-port", str(args.stream_port)])
+    if args.gui_console:
+        passthrough.append("--gui-console")
+
+    # Qwen オプション（run_webots へ透過）
+    if args.qwen_enable:
+        passthrough.append("--qwen-enable")
+        gguf = (args.qwen_gguf_path or os.getenv("QWEN_GGUF_PATH", "")).strip()
+        if gguf:
+            passthrough.extend(["--qwen-gguf-path", gguf])
+
+    print("run100_webots を開始します")
+    print("- runs:", args.runs)
+    print("- seed:", seed)
+    print("- envs:", ", ".join(env_candidates))
+    if args.dry_run:
+        print("- dry-run: 起動しません")
+    if args.capture_logs:
+        print("- capture-logs: 有効")
+    if headless:
+        print("- mode: headless（映像なし）")
+    elif args.stream:
+        print("- mode: stream（映像あり）")
+    else:
+        print("- mode: gui（映像あり）")
+    if passthrough:
+        print("- run_webots options:", " ".join(passthrough))
+    print("- 出力:", out_json)
+
+    # Qwen 有効化時の事前チェック（失敗すると全試行がフォールバックになるため、開始前に止める）
+    if args.qwen_enable and not args.dry_run:
+        gguf = (args.qwen_gguf_path or os.getenv("QWEN_GGUF_PATH", "")).strip()
+        if not gguf:
+            print("エラー: --qwen-enable を指定しましたが、モデルパスが未設定です。")
+            print("       --qwen-gguf-path /path/to/model.gguf も指定してください。")
+            sys.exit(2)
+        if not Path(gguf).expanduser().exists():
+            print("エラー: 指定されたGGUFが見つかりません:", gguf)
+            sys.exit(2)
+        # Webotsコントローラ側のPythonを優先して import チェック（runtime.ini があればそれに合わせる）
+        python_cmd = "python3"
+        try:
+            runtime_ini = ROOT / "controllers" / "drone_circular_controller" / "runtime.ini"
+            if runtime_ini.exists():
+                for line in runtime_ini.read_text(encoding="utf-8").splitlines():
+                    if line.strip().startswith("COMMAND="):
+                        python_cmd = line.split("=", 1)[1].strip() or python_cmd
+                        break
+        except Exception:
+            pass
+
+        try:
+            subprocess.run([python_cmd, "-c", "import llama_cpp"], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception:
+            print(f"エラー: {python_cmd} から llama_cpp を import できません（llama-cpp-python が未導入の可能性）。")
+            print("       コントローラ用Pythonにインストールしてください（venv推奨）。")
+            sys.exit(2)
+
+    digits = max(2, len(str(int(args.runs))))
+
+    for i in range(1, args.runs + 1):
+        run_id = f"R{i:0{digits}d}"
+        expected = {leg: rng.choice(env_candidates) for leg in LEG_IDS}
+        cmd = [str(RUN_WEBOTS), *passthrough, expected["FL"], expected["FR"], expected["RL"], expected["RR"]]
+
+        record = RunRecord(run_id=run_id, expected=expected, started_at=_now_iso())
+        meta["records"].append(
+            {
+                "run_id": record.run_id,
+                "expected": record.expected,
+                "started_at": record.started_at,
+                "ended_at": record.ended_at,
+                "exit_code": record.exit_code,
+                "elapsed_sec": record.elapsed_sec,
+                "log_path": record.log_path,
+            }
+        )
+        flush()
+
+        print("\n============================================================")
+        print(f"[{run_id}] 環境: FL={expected['FL']} FR={expected['FR']} RL={expected['RL']} RR={expected['RR']}")
+        print(f"[{run_id}] 起動: {' '.join(cmd)}")
+
+        if args.dry_run:
+            continue
+
+        t0 = time.time()
+        try:
+            if args.capture_logs:
+                log_path = logs_dir / f"run_{timestamp}_seed{seed}_{run_id}.log"
+                record.log_path = str(log_path)
+                with log_path.open("w", encoding="utf-8") as f:
+                    proc = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT)
+                record.exit_code = proc.returncode
+            else:
+                proc = subprocess.run(cmd)
+                record.exit_code = proc.returncode
+        except KeyboardInterrupt:
+            print("\n中断されました。ここまでの結果を保存して終了します。")
+            record.exit_code = 130
+            record.ended_at = _now_iso()
+            record.elapsed_sec = time.time() - t0
+            meta["records"][-1].update(
+                {
+                    "ended_at": record.ended_at,
+                    "exit_code": record.exit_code,
+                    "elapsed_sec": record.elapsed_sec,
+                    "log_path": record.log_path,
+                }
+            )
+            flush()
+            sys.exit(130)
+        finally:
+            record.ended_at = record.ended_at or _now_iso()
+            record.elapsed_sec = record.elapsed_sec or (time.time() - t0)
+            meta["records"][-1].update(
+                {
+                    "ended_at": record.ended_at,
+                    "exit_code": record.exit_code,
+                    "elapsed_sec": record.elapsed_sec,
+                    "log_path": record.log_path,
+                }
+            )
+            flush()
+
+        if record.exit_code != 0:
+            print(f"[{run_id}] エラー終了: exit_code={record.exit_code}")
+            if not args.continue_on_error:
+                print("--continue-on-error が無いため停止します。")
+                break
+
+    print("\n完了しました。出力:", out_json)
+
+    # run100_webots 完了後に result100 相当の突合結果をCSVで自動出力
+    if not args.dry_run:
+        sessions = _read_jsonl(DEFAULT_SESSIONS)
+        records = meta.get("records", []) or []
+
+        if sessions and isinstance(records, list) and records:
+            base = out_json.stem
+            out_csv_legs = out_dir / f"{base}_legs.csv"
+            out_csv_summary = out_dir / f"{base}_summary.csv"
+
+            legs_stats = _write_csv_legs(out_csv_legs, records, sessions)
+            _write_csv_summary(out_csv_summary, records, sessions)
+
+            print("CSVを出力しました:")
+            print("- legs:", out_csv_legs)
+            print("- summary:", out_csv_summary)
+            try:
+                rate = (
+                    float(legs_stats.get("qwen_used_true", 0)) / float(legs_stats.get("legs_total", 0))
+                    if float(legs_stats.get("legs_total", 0))
+                    else 0.0
+                )
+                print(
+                    "Qwen集計（legs合計）:",
+                    f"used_true={legs_stats.get('qwen_used_true')} used_false={legs_stats.get('qwen_used_false')} missing={legs_stats.get('qwen_used_missing')} rate={rate:.3f}",
+                )
+            except Exception:
+                pass
+        else:
+            print("CSV出力をスキップしました: セッションログまたはrecordsが見つかりません")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,49 @@
+{
+  "schema": "result10/v1",
+  "run_file": "benchmarks/run10_webots/run_20260116_164005_seed1.json",
+  "sessions_file": "/home/kk21053/sotuken/webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl",
+  "matched": 1,
+  "runs": 1,
+  "total": {
+    "correct": 2,
+    "total": 4,
+    "avg_accuracy": 0.5
+  },
+  "runs_detail": [
+    {
+      "run_id": "R01",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "session_id": "drone_20260116_163621",
+      "accuracy": 0.5,
+      "correct": 2,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        },
+        "FR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "RR": {
+          "expected": "TRAPPED",
+          "got": "NONE",
+          "correct": false
+        }
+      }
+    }
+  ]
+}

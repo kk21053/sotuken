@@ -7,9 +7,16 @@
 # オプション:
 #   --stream            # GUIが出せない環境向け。Webotsのストリーミングを有効化
 #   --stream-port <p>   # ストリーミングポート番号（省略時はWebotsの既定値）
+#   --headless          # 映像出力なし（WebotsのGUI/3D描画を抑制）で起動
+#                       # 具体的には WEBOTS_HEADLESS=1 を設定し、webots に --no-rendering --batch を付与
 #   --gui-console       # 互換用（非推奨）: Webots内のGUIコンソールを使わず、従来通り起動するだけ
 #                     # ※Webots内コンソールの「位置/サイズ」はCLIから確実に制御できないため、
 #                     #   出力は常に端末(=VS Codeなら画面下部)へ出す。
+#
+# Qwen(LLM) オプション（diagnostics_pipeline/llm_client.py が参照する環境変数を設定）:
+#   --qwen-enable                 # QWEN_ENABLE=1 を設定
+#   --qwen-disable                # QWEN_ENABLE=0 を設定
+#   --qwen-gguf-path <path.gguf>  # QWEN_GGUF_PATH を設定
 
 import os
 import subprocess
@@ -28,6 +35,33 @@ def main() -> None:
     stream = False
     stream_port = None
     use_gui_console = False
+    headless = False
+    no_rendering = False
+    batch = False
+    minimize = False
+
+    qwen_enable: bool | None = None
+    qwen_gguf_path: str | None = None
+
+    if "--headless" in args:
+        headless = True
+        args = [a for a in args if a != "--headless"]
+        # headless は映像出力抑制目的なので、描画停止 + ポップアップ抑制を既定で有効化
+        no_rendering = True
+        batch = True
+        minimize = True
+
+    # Webots の描画/挙動オプションを透過
+    if "--no-rendering" in args:
+        no_rendering = True
+        args = [a for a in args if a != "--no-rendering"]
+    if "--batch" in args:
+        batch = True
+        args = [a for a in args if a != "--batch"]
+    if "--minimize" in args:
+        minimize = True
+        args = [a for a in args if a != "--minimize"]
+
     if "--stream" in args:
         stream = True
         args = [a for a in args if a != "--stream"]
@@ -43,15 +77,37 @@ def main() -> None:
         use_gui_console = True
         args = [a for a in args if a != "--gui-console"]
 
+    # Qwen オプション
+    if "--qwen-enable" in args:
+        qwen_enable = True
+        args = [a for a in args if a != "--qwen-enable"]
+    if "--qwen-disable" in args:
+        qwen_enable = False
+        args = [a for a in args if a != "--qwen-disable"]
+    if "--qwen-gguf-path" in args:
+        try:
+            i = args.index("--qwen-gguf-path")
+            qwen_gguf_path = args[i + 1]
+            args = args[:i] + args[i + 2 :]
+        except Exception:
+            print("エラー: --qwen-gguf-path の指定が不正です。例: --qwen-gguf-path /path/to/model.gguf")
+            sys.exit(1)
+
     # 引数が4つなら、起動前に環境設定を適用する（簡易）
     if len(args) == 4:
         envs = args
         print("環境設定を適用します:", "FL=", envs[0], "FR=", envs[1], "RL=", envs[2], "RR=", envs[3])
         subprocess.run([str(SET_ENV), *envs], check=True)
     elif len(args) not in (0, 4):
-        print("使い方: ./run_webots [--stream [--stream-port P]] [--gui-console] [FL FR RL RR]")
+        print(
+            "使い方: ./run_webots [--headless] [--no-rendering] [--batch] [--minimize] "
+            "[--stream [--stream-port P]] [--gui-console] "
+            "[--qwen-enable|--qwen-disable] [--qwen-gguf-path PATH] [FL FR RL RR]"
+        )
         print("例:    ./run_webots NONE BURIED TRAPPED NONE")
         print("       ./run_webots --stream --stream-port 20000")
+        print("       ./run_webots --headless")
+        print("       ./run_webots --headless --qwen-enable --qwen-gguf-path /path/to/model.gguf")
         print("       ./run_webots --gui-console")
         sys.exit(1)
 
@@ -59,14 +115,33 @@ def main() -> None:
         print("エラー: ワールドが見つかりません:", WORLD)
         sys.exit(1)
 
-    # GUIを確実に有効化（もしヘッドレス系の環境変数があれば解除）
-    for k in ("WEBOTS_HEADLESS", "WEBOTS_DISABLE_GUI", "QT_QPA_PLATFORM"):
-        if os.environ.get(k):
-            print(f"環境変数 {k} を無効化してGUI表示を試みます")
-            os.environ.pop(k, None)
+    # Qwen の環境変数を必要に応じて設定
+    if qwen_enable is not None:
+        os.environ["QWEN_ENABLE"] = "1" if qwen_enable else "0"
+    if qwen_gguf_path is not None:
+        os.environ["QWEN_GGUF_PATH"] = str(qwen_gguf_path)
+
+    if headless:
+        # 映像出力を抑制する（GUIを開かない/描画しない）
+        os.environ["WEBOTS_HEADLESS"] = "1"
+        os.environ["WEBOTS_DISABLE_GUI"] = "1"
+        # QtがGUIデバイスを要求する環境での失敗を避ける（存在すれば上書き）
+        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    else:
+        # GUIを確実に有効化（もしヘッドレス系の環境変数があれば解除）
+        for k in ("WEBOTS_HEADLESS", "WEBOTS_DISABLE_GUI", "QT_QPA_PLATFORM"):
+            if os.environ.get(k):
+                print(f"環境変数 {k} を無効化してGUI表示を試みます")
+                os.environ.pop(k, None)
 
     # ストリーミング指定時はGUIが出せない環境でも映像を確認可能
     cmd = ["webots"]
+    if no_rendering:
+        cmd.append("--no-rendering")
+    if batch:
+        cmd.append("--batch")
+    if minimize:
+        cmd.append("--minimize")
     if stream:
         cmd.append("--stream")
         if stream_port is not None:
@@ -83,7 +158,7 @@ def main() -> None:
     cmd.append(str(WORLD))
 
     # GUI起動の事前チェック
-    if not stream and ("DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ):
+    if not headless and not stream and ("DISPLAY" not in os.environ and "WAYLAND_DISPLAY" not in os.environ):
         print("警告: DISPLAY/WAYLAND_DISPLAY が未設定です。GUIウィンドウが表示されない可能性があります。")
         print("       必要に応じて --stream オプションをご利用ください。例: ./run_webots --stream")
 

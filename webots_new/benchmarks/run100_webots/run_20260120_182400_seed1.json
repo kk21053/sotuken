@@ -1,0 +1,60 @@
+{
+  "schema": "run100_webots/v1",
+  "created_at": "2026-01-20T18:24:00+09:00",
+  "seed": 1,
+  "runs": 3,
+  "envs": [
+    "NONE",
+    "BURIED",
+    "TRAPPED",
+    "TANGLED",
+    "MALFUNCTION"
+  ],
+  "run_webots": "/home/kk21053/sotuken/webots_new/run_webots",
+  "dry_run": true,
+  "capture_logs": false,
+  "records": [
+    {
+      "run_id": "R01",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-20T18:24:00+09:00",
+      "ended_at": null,
+      "exit_code": null,
+      "elapsed_sec": null,
+      "log_path": null
+    },
+    {
+      "run_id": "R02",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "TANGLED",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T18:24:00+09:00",
+      "ended_at": null,
+      "exit_code": null,
+      "elapsed_sec": null,
+      "log_path": null
+    },
+    {
+      "run_id": "R03",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "BURIED",
+        "RL": "NONE",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-20T18:24:00+09:00",
+      "ended_at": null,
+      "exit_code": null,
+      "elapsed_sec": null,
+      "log_path": null
+    }
+  ]
+}

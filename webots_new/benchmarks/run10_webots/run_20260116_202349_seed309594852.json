@@ -1,0 +1,158 @@
+{
+  "schema": "run10_webots/v1",
+  "created_at": "2026-01-16T20:23:49+09:00",
+  "seed": 309594852,
+  "runs": 10,
+  "envs": [
+    "NONE",
+    "BURIED",
+    "TRAPPED",
+    "TANGLED",
+    "MALFUNCTION"
+  ],
+  "run_webots": "/home/kk21053/sotuken/webots_new/run_webots",
+  "dry_run": false,
+  "capture_logs": false,
+  "records": [
+    {
+      "run_id": "R01",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "BURIED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-16T20:23:49+09:00",
+      "ended_at": "2026-01-16T20:24:07+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 17.87399959564209,
+      "log_path": null
+    },
+    {
+      "run_id": "R02",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-16T20:24:07+09:00",
+      "ended_at": "2026-01-16T20:24:27+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 19.46813416481018,
+      "log_path": null
+    },
+    {
+      "run_id": "R03",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-16T20:24:27+09:00",
+      "ended_at": "2026-01-16T20:24:43+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 16.558008432388306,
+      "log_path": null
+    },
+    {
+      "run_id": "R04",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "BURIED",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "started_at": "2026-01-16T20:24:43+09:00",
+      "ended_at": "2026-01-16T20:25:06+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.994393825531006,
+      "log_path": null
+    },
+    {
+      "run_id": "R05",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "MALFUNCTION",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-16T20:25:06+09:00",
+      "ended_at": "2026-01-16T20:25:40+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 34.14340281486511,
+      "log_path": null
+    },
+    {
+      "run_id": "R06",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-16T20:25:40+09:00",
+      "ended_at": "2026-01-16T20:25:57+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 16.963125228881836,
+      "log_path": null
+    },
+    {
+      "run_id": "R07",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "TANGLED"
+      },
+      "started_at": "2026-01-16T20:25:57+09:00",
+      "ended_at": "2026-01-16T20:26:20+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 22.229021072387695,
+      "log_path": null
+    },
+    {
+      "run_id": "R08",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "started_at": "2026-01-16T20:26:20+09:00",
+      "ended_at": "2026-01-16T20:26:37+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 17.365766525268555,
+      "log_path": null
+    },
+    {
+      "run_id": "R09",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "BURIED"
+      },
+      "started_at": "2026-01-16T20:26:37+09:00",
+      "ended_at": "2026-01-16T20:27:53+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 75.79264402389526,
+      "log_path": null
+    },
+    {
+      "run_id": "R10",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "started_at": "2026-01-16T20:27:53+09:00",
+      "ended_at": "2026-01-16T20:28:34+09:00",
+      "exit_code": 0,
+      "elapsed_sec": 41.1459276676178,
+      "log_path": null
+    }
+  ]
+}

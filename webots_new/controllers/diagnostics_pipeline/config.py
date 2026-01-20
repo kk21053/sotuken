@@ -39,6 +39,11 @@ DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True
 
+# 拘束原因分布の統合重み（Drone と Qwen）
+# 最終的に: p_final = DRONE_CAUSE_WEIGHT * p_drone + QWEN_CAUSE_WEIGHT * p_qwen
+DRONE_CAUSE_WEIGHT: float = 0.7
+QWEN_CAUSE_WEIGHT: float = 0.3
+
 # ログ
 JSONL_LOG_DIR: str = "logs"
 JSONL_EVENT_FILENAME: str = "leg_diagnostics_events.jsonl"

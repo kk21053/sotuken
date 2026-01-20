@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import time
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from . import config
@@ -148,8 +149,11 @@ class DiagnosticsPipeline:
 
         leg = self.session.ensure_leg(leg_id)
 
+        t_total0 = time.perf_counter()
+
         # ---- 1) Spot自己診断（rawを受けて集計するだけ） ----
         raw_for_spot = 0.35 if spot_can_raw is None else float(spot_can_raw)
+        t0 = time.perf_counter()
         trial = self.self_diag.record_raw_trial(
             leg=leg,
             trial_index=int(trial_index),
@@ -158,8 +162,10 @@ class DiagnosticsPipeline:
             end_time=float(buf.end_time),
             self_can_raw=float(raw_for_spot),
         )
+        leg.add_timing("spot_self_diagnosis_record_raw", time.perf_counter() - t0)
 
         # 付加情報（最終判断の根拠として trial.features に最小限載せる）
+        t0 = time.perf_counter()
         try:
             if tau_nominal:
                 if spot_tau_avg is not None:
@@ -170,8 +176,10 @@ class DiagnosticsPipeline:
                 trial.features["spot_malfunction_flag"] = float(int(spot_malfunction_flag))
         except Exception:
             pass
+        leg.add_timing("spot_feature_attach", time.perf_counter() - t0)
 
         # ---- 2) Drone観測（RoboPose） ----
+        t0 = time.perf_counter()
         try:
             self.drone.process_trial(
                 leg,
@@ -183,30 +191,41 @@ class DiagnosticsPipeline:
             )
         except Exception:
             pass
+        leg.add_timing("drone_observer_process_trial", time.perf_counter() - t0)
 
         # ---- 集計確定 ----
+        t0 = time.perf_counter()
         try:
             self.self_diag.finalize_leg(leg)
         except Exception:
             pass
+        leg.add_timing("spot_self_diagnosis_finalize_leg", time.perf_counter() - t0)
 
         # ---- 3) 最終診断（LLM/Qwen + 仕様ルール） ----
+        t0 = time.perf_counter()
         try:
             self.llm.infer(leg)
         except Exception:
             pass
+        leg.add_timing("final_infer_total", time.perf_counter() - t0)
 
         # 表示用（view_result.py が使う）
+        t0 = time.perf_counter()
         try:
             leg.p_can = (float(leg.spot_can) + float(leg.drone_can)) / 2.0
         except Exception:
             pass
+        leg.add_timing("p_can_compute", time.perf_counter() - t0)
 
         # ログは最小（finalized のみ）
+        t0 = time.perf_counter()
         try:
             self.logger.log_trial(self.session.session_id, leg, trial, stage="finalized")
         except Exception:
             pass
+        leg.add_timing("logger_log_trial", time.perf_counter() - t0)
+
+        leg.add_timing("complete_trial_total", time.perf_counter() - t_total0)
 
         return trial
 

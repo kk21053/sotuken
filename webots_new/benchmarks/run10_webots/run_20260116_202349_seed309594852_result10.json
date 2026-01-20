@@ -1,0 +1,364 @@
+{
+  "schema": "result10/v1",
+  "run_file": "benchmarks/run10_webots/run_20260116_202349_seed309594852.json",
+  "sessions_file": "/home/kk21053/sotuken/webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl",
+  "matched": 10,
+  "runs": 10,
+  "total": {
+    "correct": 22,
+    "total": 40,
+    "avg_accuracy": 0.55
+  },
+  "runs_detail": [
+    {
+      "run_id": "R01",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "NONE",
+        "RL": "BURIED",
+        "RR": "NONE"
+      },
+      "session_id": "drone_20260116_202355",
+      "accuracy": 0.5,
+      "correct": 2,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "TRAPPED",
+          "got": "NONE",
+          "correct": false
+        },
+        "FR": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "RL": {
+          "expected": "BURIED",
+          "got": "MALFUNCTION",
+          "correct": false
+        },
+        "RR": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        }
+      }
+    },
+    {
+      "run_id": "R02",
+      "expected": {
+        "FL": "NONE",
+        "FR": "BURIED",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "session_id": "drone_20260116_202414",
+      "accuracy": 0.75,
+      "correct": 3,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "FR": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RL": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        }
+      }
+    },
+    {
+      "run_id": "R03",
+      "expected": {
+        "FL": "NONE",
+        "FR": "TANGLED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "session_id": "drone_20260116_202431",
+      "accuracy": 0.5,
+      "correct": 2,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "FR": {
+          "expected": "TANGLED",
+          "got": "MALFUNCTION",
+          "correct": false
+        },
+        "RL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "RR": {
+          "expected": "TRAPPED",
+          "got": "TANGLED",
+          "correct": false
+        }
+      }
+    },
+    {
+      "run_id": "R04",
+      "expected": {
+        "FL": "BURIED",
+        "FR": "BURIED",
+        "RL": "TANGLED",
+        "RR": "NONE"
+      },
+      "session_id": "drone_20260116_202450",
+      "accuracy": 0.25,
+      "correct": 1,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        },
+        "FR": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RL": {
+          "expected": "TANGLED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RR": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        }
+      }
+    },
+    {
+      "run_id": "R05",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "MALFUNCTION",
+        "RL": "BURIED",
+        "RR": "BURIED"
+      },
+      "session_id": "drone_20260116_202511",
+      "accuracy": 0.5,
+      "correct": 2,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "TRAPPED",
+          "got": "TRAPPED",
+          "correct": true
+        },
+        "FR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RL": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RR": {
+          "expected": "BURIED",
+          "got": "NONE",
+          "correct": false
+        }
+      }
+    },
+    {
+      "run_id": "R06",
+      "expected": {
+        "FL": "NONE",
+        "FR": "MALFUNCTION",
+        "RL": "MALFUNCTION",
+        "RR": "MALFUNCTION"
+      },
+      "session_id": "drone_20260116_202545",
+      "accuracy": 1.0,
+      "correct": 4,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "FR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RL": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        }
+      }
+    },
+    {
+      "run_id": "R07",
+      "expected": {
+        "FL": "MALFUNCTION",
+        "FR": "MALFUNCTION",
+        "RL": "NONE",
+        "RR": "TANGLED"
+      },
+      "session_id": "drone_20260116_202602",
+      "accuracy": 0.75,
+      "correct": 3,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "FR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "RR": {
+          "expected": "TANGLED",
+          "got": "NONE",
+          "correct": false
+        }
+      }
+    },
+    {
+      "run_id": "R08",
+      "expected": {
+        "FL": "TANGLED",
+        "FR": "MALFUNCTION",
+        "RL": "TANGLED",
+        "RR": "MALFUNCTION"
+      },
+      "session_id": "drone_20260116_202625",
+      "accuracy": 0.75,
+      "correct": 3,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "TANGLED",
+          "got": "TANGLED",
+          "correct": true
+        },
+        "FR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        },
+        "RL": {
+          "expected": "TANGLED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RR": {
+          "expected": "MALFUNCTION",
+          "got": "MALFUNCTION",
+          "correct": true
+        }
+      }
+    },
+    {
+      "run_id": "R09",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "TRAPPED",
+        "RR": "BURIED"
+      },
+      "session_id": "drone_20260116_202642",
+      "accuracy": 0.0,
+      "correct": 0,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "TRAPPED",
+          "got": "NONE",
+          "correct": false
+        },
+        "FR": {
+          "expected": "TRAPPED",
+          "got": "NONE",
+          "correct": false
+        },
+        "RL": {
+          "expected": "TRAPPED",
+          "got": "TANGLED",
+          "correct": false
+        },
+        "RR": {
+          "expected": "BURIED",
+          "got": "TRAPPED",
+          "correct": false
+        }
+      }
+    },
+    {
+      "run_id": "R10",
+      "expected": {
+        "FL": "TRAPPED",
+        "FR": "TRAPPED",
+        "RL": "NONE",
+        "RR": "TRAPPED"
+      },
+      "session_id": "drone_20260116_202757",
+      "accuracy": 0.5,
+      "correct": 2,
+      "total": 4,
+      "per_leg": {
+        "FL": {
+          "expected": "TRAPPED",
+          "got": "TRAPPED",
+          "correct": true
+        },
+        "FR": {
+          "expected": "TRAPPED",
+          "got": "TANGLED",
+          "correct": false
+        },
+        "RL": {
+          "expected": "NONE",
+          "got": "NONE",
+          "correct": true
+        },
+        "RR": {
+          "expected": "TRAPPED",
+          "got": "NONE",
+          "correct": false
+        }
+      }
+    }
+  ]
+}

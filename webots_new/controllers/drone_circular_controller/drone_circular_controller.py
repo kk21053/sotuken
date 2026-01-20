@@ -453,45 +453,15 @@ class DroneCircularController:
             pass
 
     def run(self) -> None:
-        try:
-            while self.supervisor.step(self.time_step) != -1:
-                self.process_messages()
-                self._maybe_complete_trials()
-                self.update_position()
+        while self.supervisor.step(self.time_step) != -1:
+            self.process_messages()
+            self._maybe_complete_trials()
+            self.update_position()
 
-                # フェイルセーフ: 何らかの理由で試行が完了しない/quitできない場合でも終了させる
-                now = float(self.supervisor.getTime())
-                if (now - self._start_time) > self._max_runtime_s and not self._finalized:
-                    print(f"[drone_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> finalize+quit")
-                    snap = self._save_snapshot_once()
-                    if snap:
-                        try:
-                            self.pipeline.session.image_path = snap
-                        except Exception:
-                            pass
-                    try:
-                        self.pipeline.finalize()
-                    except Exception:
-                        pass
-                    self._finalized = True
-                    self._quit_time = now + 0.5
-
-                if self._finalized and self._quit_time is not None:
-                    if self.supervisor.getTime() >= self._quit_time:
-                        if not self._quit_message_printed:
-                            print("[drone_new] quit simulation")
-                            self._quit_message_printed = True
-                        try:
-                            self.supervisor.simulationQuit(0)
-                        except Exception as exc:
-                            if not self._quit_error_printed:
-                                print(f"[drone_new] warn: simulationQuit failed: {exc}")
-                                self._quit_error_printed = True
-        finally:
-            # Spot側の simulationQuit 等で step() が -1 になった場合でも、
-            # セッションJSONLが出力されず評価側が前回セッションを拾う事故を避ける。
-            if not self._finalized:
-                print("[drone_new] finalize on exit (failsafe)")
+            # フェイルセーフ: 何らかの理由で試行が完了しない/quitできない場合でも終了させる
+            now = float(self.supervisor.getTime())
+            if (now - self._start_time) > self._max_runtime_s and not self._finalized:
+                print(f"[drone_new] watchdog: runtime>{self._max_runtime_s:.0f}s -> finalize+quit")
                 snap = self._save_snapshot_once()
                 if snap:
                     try:
@@ -503,6 +473,19 @@ class DroneCircularController:
                 except Exception:
                     pass
                 self._finalized = True
+                self._quit_time = now + 0.5
+
+            if self._finalized and self._quit_time is not None:
+                if self.supervisor.getTime() >= self._quit_time:
+                    if not self._quit_message_printed:
+                        print("[drone_new] quit simulation")
+                        self._quit_message_printed = True
+                    try:
+                        self.supervisor.simulationQuit(0)
+                    except Exception as exc:
+                        if not self._quit_error_printed:
+                            print(f"[drone_new] warn: simulationQuit failed: {exc}")
+                            self._quit_error_printed = True
 
 
 def main() -> None:
