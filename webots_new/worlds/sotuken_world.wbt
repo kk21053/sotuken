@@ -1,9 +1,8 @@
 #VRML_SIM R2025a utf8
 
-EXTERNPROTO "../protos/vendor/projects/objects/floors/protos/RectangleArena.proto"
-EXTERNPROTO "../protos/vendor/projects/robots/boston_dynamics/spot/protos/Spot.proto"
-EXTERNPROTO "../protos/custom/SandPatch.proto"
-EXTERNPROTO "../protos/vendor/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/boston_dynamics/spot/protos/Spot.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/dji/mavic/protos/Mavic2Pro.proto"
 
 DEF WORLD_INFO WorldInfo {
   basicTimeStep 16
@@ -36,15 +35,15 @@ DEF WORLD_INFO WorldInfo {
         50000
       ]
       bounce 0
-      softCFM 0.000001
+      softCFM 0.000000001
     }
     DEF BURIED_TOP_CONTACT ContactProperties {
       material1 "buried_box_top"
       coulombFriction [
-        0.1
+        50000
       ]
       bounce 0
-      softCFM 0.000001
+      softCFM 0.000000001
     }
   ]
 }
@@ -118,14 +117,14 @@ DEF BURIED_BOX_FL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.24 0.18 0.60
           }
         }
       ]
       name "buried_box_left_FL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.24 0.18 0.60
       }
       locked TRUE
     }
@@ -138,14 +137,14 @@ DEF BURIED_BOX_FL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.24 0.18 0.60
           }
         }
       ]
       name "buried_box_right_FL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.24 0.18 0.60
       }
       locked TRUE
     }
@@ -158,14 +157,14 @@ DEF BURIED_BOX_FL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.24 0.60
           }
         }
       ]
       name "buried_box_front_FL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.24 0.60
       }
       locked TRUE
     }
@@ -178,14 +177,14 @@ DEF BURIED_BOX_FL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.24 0.60
           }
         }
       ]
       name "buried_box_back_FL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.24 0.60
       }
       locked TRUE
     }
@@ -207,7 +206,7 @@ DEF BURIED_BOX_FR Group {
         }
       ]
       name "buried_box_bottom_FR"
-      contactMaterial "buried_box_top"
+      contactMaterial "buried_box"
       boundingObject Box {
         size 0.18 0.18 0.08
       }
@@ -242,14 +241,14 @@ DEF BURIED_BOX_FR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_left_FR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
@@ -262,14 +261,14 @@ DEF BURIED_BOX_FR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_right_FR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
@@ -282,14 +281,14 @@ DEF BURIED_BOX_FR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_front_FR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
@@ -302,14 +301,14 @@ DEF BURIED_BOX_FR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_back_FR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
@@ -338,7 +337,7 @@ DEF BURIED_BOX_RL Group {
       locked TRUE
     }
     DEF BURIED_TOP_RL Solid {
-      translation -0.26 0.17 0.12
+      translation 0.0 0.0 -100.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -351,14 +350,14 @@ DEF BURIED_BOX_RL Group {
         }
       ]
       name "buried_box_top_RL"
-      contactMaterial "buried_box_top"
+      contactMaterial "buried_box"
       boundingObject Box {
         size 0.18 0.18 0.04
       }
       locked TRUE
     }
     DEF BURIED_LEFT_RL Solid {
-      translation -0.36 0.17 0.08
+      translation 0.0 0.0 -100.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -366,19 +365,19 @@ DEF BURIED_BOX_RL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_left_RL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
     DEF BURIED_RIGHT_RL Solid {
-      translation -0.16 0.17 0.08
+      translation 0.0 0.0 -100.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -386,19 +385,19 @@ DEF BURIED_BOX_RL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_right_RL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
     DEF BURIED_FRONT_RL Solid {
-      translation -0.26 0.27 0.08
+      translation 0.0 0.0 -100.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -406,19 +405,19 @@ DEF BURIED_BOX_RL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_front_RL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
     DEF BURIED_BACK_RL Solid {
-      translation -0.26 0.07 0.08
+      translation 0.0 0.0 -100.0
       children [
         Shape {
           appearance PBRAppearance {
@@ -426,14 +425,14 @@ DEF BURIED_BOX_RL Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_back_RL"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
@@ -455,7 +454,7 @@ DEF BURIED_BOX_RR Group {
         }
       ]
       name "buried_box_bottom_RR"
-      contactMaterial "buried_box_top"
+      contactMaterial "buried_box"
       boundingObject Box {
         size 0.18 0.18 0.08
       }
@@ -475,7 +474,7 @@ DEF BURIED_BOX_RR Group {
         }
       ]
       name "buried_box_top_RR"
-      contactMaterial "buried_box_top"
+      contactMaterial "buried_box"
       boundingObject Box {
         size 0.18 0.18 0.04
       }
@@ -490,14 +489,14 @@ DEF BURIED_BOX_RR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_left_RR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
@@ -510,14 +509,14 @@ DEF BURIED_BOX_RR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.16 0.18 0.60
+            size 0.08 0.18 0.90
           }
         }
       ]
       name "buried_box_right_RR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.16 0.18 0.60
+        size 0.08 0.18 0.90
       }
       locked TRUE
     }
@@ -530,14 +529,14 @@ DEF BURIED_BOX_RR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_front_RR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
@@ -550,14 +549,14 @@ DEF BURIED_BOX_RR Group {
             roughness 0.95
           }
           geometry Box {
-            size 0.18 0.16 0.60
+            size 0.18 0.08 0.90
           }
         }
       ]
       name "buried_box_back_RR"
       contactMaterial "buried_box"
       boundingObject Box {
-        size 0.18 0.16 0.60
+        size 0.18 0.08 0.90
       }
       locked TRUE
     }
@@ -718,7 +717,7 @@ DEF FOOT_TRAP_FL Solid {
   locked TRUE
 }
 DEF FOOT_TRAP_FR Solid {
-  translation 0.45 -0.17 0.0
+  translation 0.0 0.0 -100.0
   children [
     Group {
       children [
@@ -1180,7 +1179,7 @@ DEF FOOT_TRAP_RR Solid {
   locked TRUE
 }
 DEF FOOT_VINE_FL Solid {
-  translation 0.41 0.17 0.05
+  translation 0.18 0.165 0.34
   children [
     # rope-like tangle: thin loop segments + a tail
     Pose {
@@ -2820,6 +2819,10 @@ DEF SPOT Spot {
   translation 0 0 0.65
   rotation 0 0 1 0
   controller "spot_self_diagnosis"
+
+  controllerArgs [
+    "--malfunction_legs=FR,RR"
+  ]
 supervisor TRUE
 }
 DEF DRONE Mavic2Pro {

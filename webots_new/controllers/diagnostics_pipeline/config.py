@@ -20,6 +20,10 @@ TRIAL_ANGLE_DEG: float = 4.0
 SELF_WEIGHTS = {"track": 0.4, "vel": 0.25, "tau": 0.25, "safe": 0.1}
 SELF_CAN_THRESHOLD: float = 0.50
 
+# Drone観測の可否（drone_can）用の閾値。
+# spot_can と同一閾値にすると BURIED/TRAPPED でも高canになりやすいので分離する。
+DRONE_CAN_THRESHOLD: float = 0.70
+
 # 確信度のシグモイド
 CONFIDENCE_STEEPNESS: float = 15.0
 
@@ -38,6 +42,11 @@ DELTA_THETA_REF_DEG: float = TRIAL_ANGLE_DEG
 
 # RoboPose のみ使用（仕様）
 USE_ONLY_ROBOPOSE: bool = True
+
+# 拘束原因分布の統合重み（Drone と Qwen）
+# 最終的に: p_final = DRONE_CAUSE_WEIGHT * p_drone + QWEN_CAUSE_WEIGHT * p_qwen
+DRONE_CAUSE_WEIGHT: float = 0.7
+QWEN_CAUSE_WEIGHT: float = 0.3
 
 # ログ
 JSONL_LOG_DIR: str = "logs"

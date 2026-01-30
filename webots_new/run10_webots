@@ -1,0 +1,402 @@
+#!/usr/bin/env python3
+"""run10_webots
+
+「各脚にランダムな環境を設置して run_webots を起動」を指定回数（既定10回）繰り返す。
+
+- 1回ごとに FL/FR/RL/RR へランダムに環境ラベルを割り当てる
+- その割り当てを引数として `run_webots` を起動（run_webots 側が set_environment を実行）
+- 実行条件（seed・割り当て）を JSON に保存する
+
+注意:
+- Webots は通常、ユーザがウィンドウを閉じるまで戻らないため、各回の終了は手動操作になる。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import random
+import signal
+import subprocess
+import sys
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+ROOT = Path(__file__).resolve().parent
+RUN_WEBOTS = ROOT / "run_webots"
+WORLD = ROOT / "worlds" / "sotuken_world.wbt"
+
+LEG_IDS = ["FL", "FR", "RL", "RR"]
+DEFAULT_ENVIRONMENTS = ["NONE", "BURIED", "TRAPPED", "TANGLED", "MALFUNCTION"]
+
+
+def _now_iso() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def _validate_env_list(values: List[str]) -> List[str]:
+    envs = [v.strip().upper() for v in values if v.strip()]
+    unknown = sorted({e for e in envs if e not in DEFAULT_ENVIRONMENTS})
+    if unknown:
+        raise ValueError(
+            "無効な環境が含まれています: "
+            + ", ".join(unknown)
+            + "（有効: "
+            + ", ".join(DEFAULT_ENVIRONMENTS)
+            + "）"
+        )
+    if not envs:
+        raise ValueError("環境候補が空です")
+    return envs
+
+
+def _default_seed() -> int:
+    return int.from_bytes(os.urandom(4), "big")
+
+
+@dataclass
+class RunRecord:
+    run_id: str
+    expected: Dict[str, str]
+    started_at: str
+    ended_at: Optional[str] = None
+    exit_code: Optional[int] = None
+    elapsed_sec: Optional[float] = None
+    log_path: Optional[str] = None
+    timed_out: bool = False
+    pid: Optional[int] = None
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        prog="run10_webots",
+        description="各脚へランダム環境を設定して run_webots を複数回起動します（既定10回、既定は映像なし）",
+    )
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=10,
+        help="繰り返し回数（既定: 10）",
+    )
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="乱数seed（省略時はランダム）",
+    )
+    parser.add_argument(
+        "--envs",
+        nargs="+",
+        default=DEFAULT_ENVIRONMENTS,
+        help="環境候補（例: --envs NONE BURIED TRAPPED）",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="環境割り当てだけ生成して起動しない",
+    )
+    parser.add_argument(
+        "--capture-logs",
+        action="store_true",
+        help="run_webots/Webots の stdout/stderr をファイルへ保存する",
+    )
+    parser.add_argument(
+        "--timeout-sec",
+        type=float,
+        default=420.0,
+        help="1回あたりの最大実行時間(秒)。超過時は強制終了する（既定: 420）",
+    )
+    parser.add_argument(
+        "--kill-stale-webots",
+        action="store_true",
+        help="実行前に同一worldで起動中のwebotsプロセスがあれば終了させる（スタック回避）",
+    )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="エラーが出ても次の回へ進む（既定は停止）",
+    )
+
+    # run_webots のオプションを透過
+    parser.add_argument("--stream", action="store_true", help="run_webots の --stream を付与")
+    parser.add_argument(
+        "--stream-port",
+        type=int,
+        default=None,
+        help="run_webots の --stream-port を付与",
+    )
+    parser.add_argument(
+        "--gui",
+        action="store_true",
+        help="GUI/映像ありで起動する（既定は --headless 相当で映像なし）",
+    )
+    parser.add_argument(
+        "--gui-console",
+        action="store_true",
+        help="run_webots の --gui-console を付与（非推奨）",
+    )
+
+    # Qwen（run_webots の環境変数指定）
+    parser.add_argument("--qwen-enable", action="store_true", help="run_webots の --qwen-enable を付与")
+    parser.add_argument("--qwen-disable", action="store_true", help="run_webots の --qwen-disable を付与")
+    parser.add_argument(
+        "--qwen-gguf-path",
+        type=str,
+        default=None,
+        help="run_webots の --qwen-gguf-path を付与",
+    )
+
+    args = parser.parse_args()
+
+    if args.runs <= 0:
+        print("エラー: --runs は 1 以上で指定してください")
+        sys.exit(2)
+
+    if not RUN_WEBOTS.exists():
+        print(f"エラー: run_webots が見つかりません: {RUN_WEBOTS}")
+        sys.exit(2)
+
+    try:
+        env_candidates = _validate_env_list(list(args.envs))
+    except ValueError as e:
+        print(f"エラー: {e}")
+        sys.exit(2)
+
+    seed = args.seed if args.seed is not None else _default_seed()
+    rng = random.Random(seed)
+
+    out_dir = ROOT / "benchmarks" / "run10_webots"
+    logs_dir = out_dir / "logs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    out_json = out_dir / f"run_{timestamp}_seed{seed}.json"
+
+    meta = {
+        "schema": "run10_webots/v1",
+        "created_at": _now_iso(),
+        "seed": seed,
+        "runs": args.runs,
+        "envs": env_candidates,
+        "run_webots": str(RUN_WEBOTS),
+        "timeout_sec": float(args.timeout_sec),
+        "kill_stale_webots": bool(args.kill_stale_webots),
+        "world": str(WORLD),
+        "qwen": {
+            "qwen_enable": bool(args.qwen_enable),
+            "qwen_disable": bool(args.qwen_disable),
+            "qwen_gguf_path": args.qwen_gguf_path,
+        },
+        "dry_run": bool(args.dry_run),
+        "capture_logs": bool(args.capture_logs),
+        "records": [],
+    }
+
+    def flush() -> None:
+        out_json.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n")
+
+    flush()
+
+    passthrough: List[str] = []
+
+    # 既定は映像なし（headless）。明示的に --gui か --stream の場合のみ映像あり。
+    headless = (not args.gui) and (not args.stream)
+    if headless:
+        passthrough.append("--headless")
+
+    if args.stream:
+        passthrough.append("--stream")
+    if args.stream_port is not None:
+        passthrough.extend(["--stream-port", str(args.stream_port)])
+    if args.gui_console:
+        passthrough.append("--gui-console")
+
+    if args.qwen_enable:
+        passthrough.append("--qwen-enable")
+    if args.qwen_disable:
+        passthrough.append("--qwen-disable")
+    if args.qwen_gguf_path is not None:
+        passthrough.extend(["--qwen-gguf-path", str(args.qwen_gguf_path)])
+
+    if args.qwen_enable and args.qwen_disable:
+        print("エラー: --qwen-enable と --qwen-disable は同時指定できません")
+        sys.exit(2)
+
+    print("run10_webots を開始します")
+    print("- runs:", args.runs)
+    print("- seed:", seed)
+    print("- envs:", ", ".join(env_candidates))
+    if args.dry_run:
+        print("- dry-run: 起動しません")
+    if args.capture_logs:
+        print("- capture-logs: 有効")
+    if headless:
+        print("- mode: headless（映像なし）")
+    elif args.stream:
+        print("- mode: stream（映像あり）")
+    else:
+        print("- mode: gui（映像あり）")
+    if passthrough:
+        print("- run_webots options:", " ".join(passthrough))
+    print("- 出力:", out_json)
+
+    for i in range(1, args.runs + 1):
+        run_id = f"R{i:02d}"
+        expected = {leg: rng.choice(env_candidates) for leg in LEG_IDS}
+        cmd = [str(RUN_WEBOTS), *passthrough, expected["FL"], expected["FR"], expected["RL"], expected["RR"]]
+
+        record = RunRecord(run_id=run_id, expected=expected, started_at=_now_iso())
+        meta["records"].append(
+            {
+                "run_id": record.run_id,
+                "expected": record.expected,
+                "started_at": record.started_at,
+                "ended_at": record.ended_at,
+                "exit_code": record.exit_code,
+                "elapsed_sec": record.elapsed_sec,
+                "log_path": record.log_path,
+                "timed_out": record.timed_out,
+                "pid": record.pid,
+            }
+        )
+        flush()
+
+        print("\n============================================================")
+        print(f"[{run_id}] 環境: FL={expected['FL']} FR={expected['FR']} RL={expected['RL']} RR={expected['RR']}")
+        print(f"[{run_id}] 起動: {' '.join(cmd)}")
+
+        if args.dry_run:
+            continue
+
+        def _kill_stale_webots() -> None:
+            if not args.kill_stale_webots:
+                return
+            if not WORLD.exists():
+                return
+
+            # このworldを開いているwebotsだけを対象にする
+            pattern = str(WORLD)
+            try:
+                res = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True)
+            except Exception:
+                return
+            pids = [p.strip() for p in (res.stdout or "").splitlines() if p.strip().isdigit()]
+            if not pids:
+                return
+            print(f"[{run_id}] stale webots detected (world match). killing pids={','.join(pids)}")
+            # まず SIGTERM
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGTERM)
+                except Exception:
+                    pass
+            time.sleep(1.0)
+            # 残っていれば SIGKILL
+            for pid in pids:
+                try:
+                    os.kill(int(pid), signal.SIGKILL)
+                except Exception:
+                    pass
+
+        _kill_stale_webots()
+
+        t0 = time.time()
+        try:
+            log_fh = None
+            if args.capture_logs:
+                log_path = logs_dir / f"run_{timestamp}_seed{seed}_{run_id}.log"
+                record.log_path = str(log_path)
+                log_fh = log_path.open("w", encoding="utf-8")
+                # 進行中でも log_path が分かるよう、先にJSONへ反映する
+                meta["records"][-1].update({"log_path": record.log_path})
+                flush()
+
+            proc = subprocess.Popen(
+                cmd,
+                stdout=(log_fh if log_fh is not None else None),
+                stderr=(subprocess.STDOUT if log_fh is not None else None),
+                start_new_session=True,
+            )
+            record.pid = int(proc.pid)
+            meta["records"][-1].update({"pid": record.pid})
+            flush()
+
+            try:
+                record.exit_code = proc.wait(timeout=float(args.timeout_sec))
+            except subprocess.TimeoutExpired:
+                record.timed_out = True
+                print(f"[{run_id}] timeout: >{args.timeout_sec}s -> terminate")
+                try:
+                    os.killpg(proc.pid, signal.SIGTERM)
+                except Exception:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+                try:
+                    record.exit_code = proc.wait(timeout=10.0)
+                except subprocess.TimeoutExpired:
+                    print(f"[{run_id}] timeout: SIGTERM ignored -> kill")
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception:
+                        try:
+                            proc.kill()
+                        except Exception:
+                            pass
+                    record.exit_code = proc.wait(timeout=10.0)
+            finally:
+                if log_fh is not None:
+                    log_fh.close()
+        except KeyboardInterrupt:
+            print("\n中断されました。ここまでの結果を保存して終了します。")
+            record.exit_code = 130
+            try:
+                # subprocess.Popen を使っているので、念のためプロセスグループを止める
+                os.killpg(proc.pid, signal.SIGTERM)  # type: ignore[name-defined]
+            except Exception:
+                pass
+            record.ended_at = _now_iso()
+            record.elapsed_sec = time.time() - t0
+            # 直前recordの反映
+            meta["records"][-1].update(
+                {
+                    "ended_at": record.ended_at,
+                    "exit_code": record.exit_code,
+                    "elapsed_sec": record.elapsed_sec,
+                    "log_path": record.log_path,
+                    "timed_out": record.timed_out,
+                }
+            )
+            flush()
+            sys.exit(130)
+        finally:
+            record.ended_at = record.ended_at or _now_iso()
+            record.elapsed_sec = record.elapsed_sec or (time.time() - t0)
+            meta["records"][-1].update(
+                {
+                    "ended_at": record.ended_at,
+                    "exit_code": record.exit_code,
+                    "elapsed_sec": record.elapsed_sec,
+                    "log_path": record.log_path,
+                    "timed_out": record.timed_out,
+                }
+            )
+            flush()
+
+        if record.exit_code != 0:
+            print(f"[{run_id}] エラー終了: exit_code={record.exit_code}")
+            if not args.continue_on_error:
+                print("--continue-on-error が無いため停止します。")
+                break
+
+    print("\n完了しました。出力:", out_json)
+
+
+if __name__ == "__main__":
+    main()

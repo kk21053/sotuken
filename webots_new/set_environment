@@ -90,13 +90,15 @@ def update_world_file(environments):
     # ワールドファイルを読み込み
     content = WORLD_FILE.read_text()
 
-    # 脚ごとの基準座標（SPOTの原点周りの想定座標）
-    # 脚ごとの基準座標（SPOTの原点周りの想定座標）
+    # 脚ごとの基準座標（Spot初期姿勢時の足先近傍リンクの実測に合わせる）
+    # NOTE: drone_circular_controller のデバッグ出力（DRONE_DEBUG_ENV_POS=1）で確認可能。
+    # 以前の (±0.45, ±0.17) は現ワールドでは大きくズレており、
+    # TRAPPED/TANGLED/BURIED が脚に掛からない原因になっていた。
     base_xy = {
-        "FL": (0.45, 0.17),
-        "FR": (0.45, -0.17),
-        "RL": (-0.45, 0.17),
-        "RR": (-0.45, -0.17),
+        "FL": (0.18, 0.165),
+        "FR": (0.18, -0.165),
+        "RL": (-0.49, 0.165),
+        "RR": (-0.49, -0.165),
     }
 
     def set_translation(def_name: str, x: float, y: float, z: float) -> None:
@@ -109,25 +111,15 @@ def update_world_file(environments):
     def hide_translation(def_name: str) -> None:
         set_translation(def_name, 0.0, 0.0, -100.0)
 
-    # TANGLED(FOOT_VINE) の基準座標（要望に基づく固定値）
-    vine_xy = {
-        "FL": (0.41, 0.17),
-        "FR": (0.40, -0.15),
-        "RL": (-0.26, 0.16),
-        "RR": (-0.27, -0.17),
-    }
+    # TANGLED(FOOT_VINE) の基準座標
+    # 原則: base_xy に合わせる（脚に確実に掛けることを優先）
+    vine_xy = dict(base_xy)
 
-    # BURIED(埋没箱) の中心座標
-    # 基本は脚ごとの基準座標(base_xy)を使うが、後脚は仕様/要望に合わせて x=-0.26 に固定する。
+    # BURIED(埋没箱) の中心座標（base_xyに合わせる）
     buried_center_xy = dict(base_xy)
-    buried_center_xy["RL"] = (-0.26, base_xy["RL"][1])
-    buried_center_xy["RR"] = (-0.26, base_xy["RR"][1])
 
-    # TRAPPED(FOOT_TRAP) のx位置オーバーライド（要望に基づく固定）
-    trap_xy = {
-        "RL": (-0.26, base_xy["RL"][1]),
-        "RR": (-0.26, base_xy["RR"][1]),
-    }
+    # TRAPPED(FOOT_TRAP) の基準座標（base_xyに合わせる）
+    trap_xy = {}
 
     for leg_id, env in zip(LEG_IDS, environments):
         x0, y0 = base_xy[leg_id]
@@ -148,15 +140,18 @@ def update_world_file(environments):
             # 6パーツ（BOTTOM/TOP/LEFT/RIGHT/FRONT/BACK）で囲う。
             # ※中心座標(bx, by)は維持し、固定オフセットで配置する（座標そのもののチューニングはしない）。
 
-            # 位置（translation）は固定し、形状（厚み/高さ）側で効き具合を調整する。
-            # 旧worldの元配置（bottom中心z=0.0、wall中心z=0.08、top中心z=0.12、offset=0.10）に揃える。
+            # NOTE: 現ワールドでは Spot の足先リンクが z≈0.34 にあるため、
+            # 旧来の z=0 近傍に配置すると物体が脚に掛からず can が高止まりする。
+            # 「脚に確実に掛かる」ことを優先して、中心Zを足先高さに合わせる。
             offset_xy = 0.10
-            z_wall_center = 0.08
-            z_top_center = 0.12
+            z_bottom_center = 0.28
+            z_wall_center = 0.34
+            z_top_center = 0.40
 
-            # BOTTOM はSpotが上に乗る原因になりやすいので表示しない。
-            # TOP は「抜け（足が囲いから出る）」を抑えるため表示する。
-            # ※膝がTOPに乗ってしまう問題は、TOP側の接触物性（摩擦）で対処する。
+            # BOTTOM は「下方向への抜け」を抑えるため表示する。
+            # TOP は「上方向への抜け（足が囲いから出る）」を抑えるため表示する。
+            # ※上に乗ってしまう/干渉しすぎる場合は、world側でBOTTOM/TOPの厚み(サイズz)を下げて調整する。
+            set_translation(f"BURIED_BOTTOM_{leg_id}", bx, by, z_bottom_center)
             set_translation(f"BURIED_TOP_{leg_id}", bx, by, z_top_center)
             set_translation(f"BURIED_LEFT_{leg_id}", bx - offset_xy, by, z_wall_center)
             set_translation(f"BURIED_RIGHT_{leg_id}", bx + offset_xy, by, z_wall_center)
@@ -164,10 +159,13 @@ def update_world_file(environments):
             set_translation(f"BURIED_BACK_{leg_id}", bx, by - offset_xy, z_wall_center)
         elif env == "TRAPPED":
             tx, ty = trap_xy.get(leg_id, (x0, y0))
-            set_translation(f"FOOT_TRAP_{leg_id}", tx, ty, 0.0)
+            # トラップ形状は内部で z≈0.09 を中心に構成されているため、
+            # 足先高さ(z≈0.34)に掛かるように配置Zを調整する。
+            set_translation(f"FOOT_TRAP_{leg_id}", tx, ty, 0.25)
         elif env == "TANGLED":
             vx, vy = vine_xy.get(leg_id, (x0, y0))
-            set_translation(f"FOOT_VINE_{leg_id}", vx, vy, 0.05)
+            # vineの幾何は内部で z=0 を中心に構成されているため、足先高さ(z≈0.34)に掛かるよう配置Zを合わせる
+            set_translation(f"FOOT_VINE_{leg_id}", vx, vy, 0.34)
         # MALFUNCTION/NONE は配置しない（非表示のまま）
 
     # MALFUNCTION 指定脚 -> Spot controllerArgs に反映

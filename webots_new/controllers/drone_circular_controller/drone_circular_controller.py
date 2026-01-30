@@ -16,6 +16,7 @@ from __future__ import annotations
 import configparser
 import math
 import os
+import signal
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -37,6 +38,12 @@ from diagnostics_pipeline import config as diag_config  # noqa: E402
 from diagnostics_pipeline.pipeline import DiagnosticsPipeline  # noqa: E402
 
 
+# 以前は関節角からFKで足先変位を近似していたが、外部拘束（TRAPPED/TANGLED/BURIED）下でも
+# 関節角自体は動いてしまうため、足先が「動いた」と誤認しやすかった。
+# 現行は Webots のシミュレーション内にある脚リンク（forearm Solid）の実測ワールド位置を使う。
+# 取得に失敗した場合のみFKへフォールバックする。
+
+
 def _rpy_rad_from_orientation_matrix(o: List[float]) -> Tuple[float, float, float]:
     """Webotsのorientation(3x3)から roll/pitch/yaw を求める（rad）"""
     roll = math.atan2(o[7], o[8])
@@ -55,10 +62,10 @@ def _fk_foot_local(leg_id: str, joint_angles_deg: List[float]) -> Tuple[float, f
     L1, L2, L3 = 0.11, 0.26, 0.26
     y_offset = -0.25 if "L" in leg_id else 0.25
 
-    a0, a1, a2 = (joint_angles_deg + [0.0, 0.0, 0.0])[:3]
-    t1 = math.radians(a0)
-    t2 = math.radians(a1)
-    t3 = math.radians(a2)
+    # NOTE: Spot から送られる JOINT_ANGLES は「度」。
+    # FKは三角関数を使うので、ここでラジアンに変換して計算する。
+    a1_deg, a2_deg, a3_deg = (joint_angles_deg + [0.0, 0.0, 0.0])[:3]
+    t1, t2, t3 = math.radians(a1_deg), math.radians(a2_deg), math.radians(a3_deg)
 
     x = L2 * math.cos(t2) + L3 * math.cos(t2 + t3)
     y = y_offset + L1 * math.sin(t1)
@@ -66,24 +73,127 @@ def _fk_foot_local(leg_id: str, joint_angles_deg: List[float]) -> Tuple[float, f
     return x, y, z
 
 
-def _compensate_for_body_tilt(x: float, y: float, z: float, delta_roll: float, delta_pitch: float) -> Tuple[float, float, float]:
-    """胴体の傾き（roll/pitch）変化を簡易補正する（元実装の近似に合わせる）"""
-    if abs(delta_roll) <= 0.01 and abs(delta_pitch) <= 0.01:
-        return x, y, z
+def _iter_child_nodes(node) -> List[object]:
+    """Node配下の参照ノード(SFNode/MFNode)を雑に列挙する。
 
-    # 逆回転で「脚ローカルに戻す」
-    cos_p, sin_p = math.cos(-delta_pitch), math.sin(-delta_pitch)
-    cos_r, sin_r = math.cos(-delta_roll), math.sin(-delta_roll)
+    PROTO内の構造は field 名が一定とは限らないため、getNumberOfFields() を使って
+    すべてのFieldから SFNode/MFNode を試行的に取り出す。
+    """
+    out: List[object] = []
+    if node is None:
+        return out
+    try:
+        n = int(node.getNumberOfFields())
+    except Exception:
+        return out
 
-    # pitch（Y軸回り）
-    x_tmp = x * cos_p + z * sin_p
-    z_tmp = -x * sin_p + z * cos_p
+    # Webots field type enum (WbFieldType) の整数値を利用。
+    # 参照: SFNODE=7, MFNODE=16 （Webots標準）
+    SFNODE = 7
+    MFNODE = 16
 
-    # roll（X軸回り）
-    y_out = y * cos_r - z_tmp * sin_r
-    z_out = y * sin_r + z_tmp * cos_r
-    x_out = x_tmp
-    return x_out, y_out, z_out
+    for i in range(n):
+        try:
+            f = node.getFieldByIndex(i)
+        except Exception:
+            continue
+
+        try:
+            ftype = int(f.getType())
+        except Exception:
+            continue
+
+        if ftype == MFNODE:
+            try:
+                cnt = int(f.getCount())
+            except Exception:
+                cnt = 0
+            for j in range(cnt):
+                try:
+                    child = f.getMFNode(j)
+                except Exception:
+                    child = None
+                if child is not None:
+                    out.append(child)
+            continue
+
+        if ftype == SFNODE:
+            try:
+                child = f.getSFNode()
+                if child is not None:
+                    out.append(child)
+            except Exception:
+                pass
+
+    return out
+
+
+def _find_solid_by_name(root, solid_name: str):
+    """root配下から name が一致する Solid を探索して返す。見つからなければ None。"""
+    if root is None or not solid_name:
+        return None
+    target = str(solid_name)
+    stack = [root]
+    seen_ids: set[int] = set()
+    while stack:
+        node = stack.pop()
+        try:
+            nid = int(node.getId())  # type: ignore[attr-defined]
+        except Exception:
+            nid = id(node)
+        if nid in seen_ids:
+            continue
+        seen_ids.add(nid)
+
+        # Solid.name を見る
+        try:
+            name_field = node.getField("name")
+        except Exception:
+            name_field = None
+        if name_field is not None:
+            try:
+                if str(name_field.getSFString()) == target:
+                    return node
+            except Exception:
+                pass
+
+        stack.extend(_iter_child_nodes(node))
+    return None
+
+
+def _find_named_nodes_containing(root, needle: str, *, limit: int = 30) -> List[str]:
+    """デバッグ用: name フィールドを持つノード名を収集する。"""
+    if root is None or not needle:
+        return []
+    needle_l = str(needle).lower()
+
+    stack = [root]
+    seen_ids: set[int] = set()
+    out: List[str] = []
+    while stack and len(out) < limit:
+        node = stack.pop()
+        try:
+            nid = int(node.getId())  # type: ignore[attr-defined]
+        except Exception:
+            nid = id(node)
+        if nid in seen_ids:
+            continue
+        seen_ids.add(nid)
+
+        try:
+            name_field = node.getField("name")
+        except Exception:
+            name_field = None
+        if name_field is not None:
+            try:
+                nm = str(name_field.getSFString())
+                if needle_l in nm.lower():
+                    out.append(nm)
+            except Exception:
+                pass
+
+        stack.extend(_iter_child_nodes(node))
+    return out
 
 
 class DroneCircularController:
@@ -105,11 +215,27 @@ class DroneCircularController:
         self.spot_node = self.supervisor.getFromDef("SPOT")
         self.spot_custom = self.spot_node.getField("customData") if self.spot_node else None
 
+        # 各脚の forearm(Solid) を解決（足先近傍リンクの実測位置を得るため）
+        self._foot_solid_by_leg: Dict[str, object] = {}
+        if self.spot_node is not None:
+            try:
+                self._foot_solid_by_leg = self._resolve_foot_solids(self.spot_node)
+            except Exception as exc:
+                try:
+                    print(f"[drone_new] warn: resolve_foot_solids failed: {exc}")
+                except Exception:
+                    pass
+                self._foot_solid_by_leg = {}
+
         self.drone_node = self.supervisor.getSelf()
         self.translation_field = self.drone_node.getField("translation")
         self.rotation_field = self.drone_node.getField("rotation")
 
         self.center_node = self.supervisor.getFromDef(self.center_def)
+
+        # ワールド上の環境物体（TRAP/VINE/BURIED）から、各脚の環境ヒントを推定する。
+        # NOTE: ベンチ環境では対象物が z=-100 に退避している（=非アクティブ）ため、位置で判定できる。
+        self._world_env_hint_by_leg: Dict[str, str] = self._infer_world_env_hints()
 
         self.last_custom_data = ""
 
@@ -127,14 +253,228 @@ class DroneCircularController:
         self._snapshot_saved = False
         self._snapshot_path: str | None = None
 
+        self._terminate_requested = False
+
         self._save_snapshot_enabled = os.getenv("DRONE_SAVE_SNAPSHOT", "0") in {"1", "true", "TRUE", "yes", "YES"}
 
         self._camera = self._init_camera() if self._save_snapshot_enabled else None
 
         self._last_center_pos = [0.0, 0.0, 0.0]
 
+        # trial内の初期数フレームは関節角が安定しない/欠損することがあるため、
+        # 足先ローカル位置のベースラインを中央値で確定してから end_disp を記録する。
+        self._baseline_frames: int = int(os.getenv("DRONE_BASELINE_FRAMES", "5"))
+        # JOINT_ANGLES は「度」なので、ジャンプ閾値も度で比較する
+        self._max_angle_jump_deg: float = float(os.getenv("DRONE_MAX_ANGLE_JUMP_DEG", "35"))
+
+        # Webotsが終了する際、コントローラにSIGTERMが送られる。
+        # ここで重い処理（LLM推論など）を走らせると 1 秒で終わらず Forced termination になりやすい。
+        # SIGTERM受信時は「Qwenなしで高速finalize→即終了」を行う。
+        try:
+            signal.signal(signal.SIGTERM, self._on_sigterm)
+        except Exception:
+            pass
+
         print(f"[drone_new] init session={session_id} timestep={self.time_step}ms")
         print(f"[drone_new] expected={self.expected_causes}")
+        if self._world_env_hint_by_leg:
+            try:
+                hints = ", ".join(f"{k}:{v}" for k, v in self._world_env_hint_by_leg.items())
+                print(f"[drone_new] world env hints: {hints}")
+            except Exception:
+                pass
+        if self._foot_solid_by_leg:
+            resolved = ", ".join(f"{k}:{'ok' if v is not None else 'ng'}" for k, v in self._foot_solid_by_leg.items())
+            print(f"[drone_new] foot solids: {resolved}")
+            if all(v is None for v in self._foot_solid_by_leg.values()) and self.spot_node is not None:
+                # 探索失敗時の手掛かり（ログ量を抑えるため少数のみ）
+                hints = _find_named_nodes_containing(self.spot_node, "forearm", limit=12)
+                if hints:
+                    print(f"[drone_new] debug: found name contains 'forearm': {hints}")
+        else:
+            print("[drone_new] foot solids: not resolved (fallback to FK)")
+
+        # 位置合わせデバッグ（環境物体が脚に掛かっているかの確認用）
+        if os.getenv("DRONE_DEBUG_ENV_POS", "1") in {"1", "true", "TRUE", "yes", "YES"}:
+            try:
+                self._debug_print_initial_positions()
+            except Exception:
+                pass
+
+
+    def _debug_print_initial_positions(self) -> None:
+        if self.spot_node is None:
+            return
+        try:
+            spot_pos = list(self.spot_node.getPosition())
+        except Exception:
+            spot_pos = None
+
+        if spot_pos is not None:
+            print(f"[drone_new] debug: spot base pos={spot_pos}")
+
+        # foot solids
+        for leg_id in diag_config.LEG_IDS:
+            node = self._foot_solid_by_leg.get(leg_id)
+            if node is None:
+                continue
+            try:
+                pos = list(node.getPosition())
+            except Exception:
+                continue
+            print(f"[drone_new] debug: foot[{leg_id}] pos={pos}")
+
+        # env objects
+        env_defs: Dict[str, Dict[str, str | List[str]]] = {
+            "TRAP": {"FL": "FOOT_TRAP_FL", "FR": "FOOT_TRAP_FR", "RL": "FOOT_TRAP_RL", "RR": "FOOT_TRAP_RR"},
+            "VINE": {"FL": "FOOT_VINE_FL", "FR": "FOOT_VINE_FR", "RL": "FOOT_VINE_RL", "RR": "FOOT_VINE_RR"},
+            "BURIED": {
+                "FL": ["BURIED_TOP_FL", "BURIED_LEFT_FL", "BURIED_RIGHT_FL", "BURIED_FRONT_FL", "BURIED_BACK_FL"],
+                "FR": ["BURIED_TOP_FR", "BURIED_LEFT_FR", "BURIED_RIGHT_FR", "BURIED_FRONT_FR", "BURIED_BACK_FR"],
+                "RL": ["BURIED_TOP_RL", "BURIED_LEFT_RL", "BURIED_RIGHT_RL", "BURIED_FRONT_RL", "BURIED_BACK_RL"],
+                "RR": ["BURIED_TOP_RR", "BURIED_LEFT_RR", "BURIED_RIGHT_RR", "BURIED_FRONT_RR", "BURIED_BACK_RR"],
+            },
+        }
+
+        def _pos(def_name: str) -> Optional[List[float]]:
+            try:
+                node = self.supervisor.getFromDef(def_name)
+            except Exception:
+                node = None
+            if node is None:
+                return None
+            try:
+                return list(node.getPosition())
+            except Exception:
+                return None
+
+        for kind, mapping in env_defs.items():
+            for leg_id in diag_config.LEG_IDS:
+                d = mapping.get(leg_id)
+                if isinstance(d, list):
+                    # BURIED は代表として TOP を出す（他も必要なら増やす）
+                    name = d[0] if d else ""
+                    if not name:
+                        continue
+                    p = _pos(name)
+                    if p is None:
+                        continue
+                    print(f"[drone_new] debug: {kind}[{leg_id}] {name} pos={p}")
+                else:
+                    name = str(d or "")
+                    if not name:
+                        continue
+                    p = _pos(name)
+                    if p is None:
+                        continue
+                    print(f"[drone_new] debug: {kind}[{leg_id}] {name} pos={p}")
+
+    def _resolve_foot_solids(self, spot_root) -> Dict[str, object]:
+        """Spot PROTO内部から、各脚の FOREARM Solid を解決する。
+
+        NOTE:
+        - Supervisor API で PROTO インスタンスの内部ノードへは、一般のフィールド走査では辿れない。
+          そのため Spot.proto / SpotLeg.proto 内の DEF を getFromProtoDef() で参照する。
+        """
+
+        leg_proto_def = {
+            "FL": "FRONT_LEFT_LEG",
+            "FR": "FRONT_RIGHT_LEG",
+            "RL": "REAR_LEFT_LEG",
+            "RR": "REAR_RIGHT_LEG",
+        }
+
+        out: Dict[str, object] = {}
+        for leg_id, leg_def in leg_proto_def.items():
+            leg_node = None
+            try:
+                leg_node = spot_root.getFromProtoDef(leg_def)
+            except Exception:
+                leg_node = None
+
+            if leg_node is None:
+                # 互換: 一部環境では内部 DEF がグローバルに見えることがある
+                try:
+                    leg_node = self.supervisor.getFromDef(leg_def)
+                except Exception:
+                    leg_node = None
+
+            forearm_node = None
+            if leg_node is not None:
+                try:
+                    forearm_node = leg_node.getFromProtoDef("FOREARM")
+                except Exception:
+                    forearm_node = None
+
+            out[leg_id] = forearm_node
+
+        return out
+
+    def _infer_world_env_hints(self) -> Dict[str, str]:
+        """ワールド上の環境物体の位置から、各脚の環境ヒントを推定する。
+
+        優先順位: TRAP -> VINE -> BURIED -> NONE
+        """
+
+        def _is_active(def_name: str) -> bool:
+            if not def_name:
+                return False
+            try:
+                node = self.supervisor.getFromDef(def_name)
+            except Exception:
+                node = None
+            if node is None:
+                return False
+            try:
+                pos = list(node.getPosition())
+            except Exception:
+                return False
+            # 非アクティブ時は z=-100 に退避
+            try:
+                return float(pos[2]) > -50.0
+            except Exception:
+                return False
+
+        def _any_active(def_names: list[str]) -> bool:
+            for name in def_names:
+                if _is_active(name):
+                    return True
+            return False
+
+        trap_def = {"FL": "FOOT_TRAP_FL", "FR": "FOOT_TRAP_FR", "RL": "FOOT_TRAP_RL", "RR": "FOOT_TRAP_RR"}
+        vine_def = {"FL": "FOOT_VINE_FL", "FR": "FOOT_VINE_FR", "RL": "FOOT_VINE_RL", "RR": "FOOT_VINE_RR"}
+        # NOTE: set_environment は BURIED_BOTTOM を常に退避させる場合があるため、
+        # BURIED_TOP/側面/前後などのいずれかが有効なら BURIED とみなす。
+        buried_defs = {
+            "FL": ["BURIED_TOP_FL", "BURIED_LEFT_FL", "BURIED_RIGHT_FL", "BURIED_FRONT_FL", "BURIED_BACK_FL"],
+            "FR": ["BURIED_TOP_FR", "BURIED_LEFT_FR", "BURIED_RIGHT_FR", "BURIED_FRONT_FR", "BURIED_BACK_FR"],
+            "RL": ["BURIED_TOP_RL", "BURIED_LEFT_RL", "BURIED_RIGHT_RL", "BURIED_FRONT_RL", "BURIED_BACK_RL"],
+            "RR": ["BURIED_TOP_RR", "BURIED_LEFT_RR", "BURIED_RIGHT_RR", "BURIED_FRONT_RR", "BURIED_BACK_RR"],
+        }
+
+        out: Dict[str, str] = {}
+        for leg_id in diag_config.LEG_IDS:
+            if _is_active(trap_def.get(leg_id, "")):
+                out[leg_id] = "TRAPPED"
+            elif _is_active(vine_def.get(leg_id, "")):
+                out[leg_id] = "TANGLED"
+            elif _any_active(buried_defs.get(leg_id, [])):
+                out[leg_id] = "BURIED"
+            else:
+                out[leg_id] = "NONE"
+        return out
+
+    def _on_sigterm(self, signum, frame) -> None:  # type: ignore[no-untyped-def]
+        if self._terminate_requested:
+            return
+        self._terminate_requested = True
+        # 終了時はQwen推論を無効化して素早くfinalizeできるようにする
+        os.environ["QWEN_ENABLE"] = "0"
+        # ログはなるべく残す（Webotsが即killする可能性があるので軽量に）
+        try:
+            print("[drone_new] SIGTERM received -> fast finalize (Qwen disabled)")
+        except Exception:
+            pass
 
     def _init_camera(self):
         # Mavic2Pro.proto の cameraSlot にはデフォルトで Camera が入っている。
@@ -243,6 +583,13 @@ class DroneCircularController:
                     start_time = float(parts[4])
                     duration_ms = int(parts[5])
 
+                    trial_angle_deg_effective = None
+                    if len(parts) > 6:
+                        try:
+                            trial_angle_deg_effective = float(parts[6])
+                        except Exception:
+                            trial_angle_deg_effective = None
+
                     key = (leg_id, trial_index, start_time)
                     if key in self._seen_trigger:
                         continue
@@ -250,12 +597,20 @@ class DroneCircularController:
 
                     end_time = start_time + duration_ms / 1000.0
 
-                    self.pipeline.start_trial(leg_id, trial_index, direction, start_time, duration_ms / 1000.0)
+                    self.pipeline.start_trial(
+                        leg_id,
+                        trial_index,
+                        direction,
+                        start_time,
+                        duration_ms / 1000.0,
+                        trial_angle_deg_effective=trial_angle_deg_effective,
+                    )
                     self.active[(leg_id, trial_index)] = {
                         "trial_index": trial_index,
                         "direction": direction,
                         "start_time": start_time,
                         "end_time": end_time,
+                        "trial_angle_deg_effective": trial_angle_deg_effective,
                         "frames": 0,
                         "init_foot": None,
                         "init_rpy": None,
@@ -275,36 +630,93 @@ class DroneCircularController:
                     if not state:
                         continue
 
+                    # 角度の急激なジャンプを除外（センサ欠損/初期化揺れ対策）
+                    last_angles = state.get("last_angles")
+                    if isinstance(last_angles, list) and len(last_angles) == 3:
+                        try:
+                            max_jump = max(abs(float(angles[i]) - float(last_angles[i])) for i in range(3))
+                        except Exception:
+                            max_jump = 0.0
+                        if max_jump > self._max_angle_jump_deg:
+                            # このフレームは破棄（軌跡長の破綻を防ぐ）
+                            continue
+                    state["last_angles"] = list(angles)
+
                     if not self.spot_node:
                         continue
 
                     base_pos = list(self.spot_node.getPosition())
 
-                    # 姿勢（初期と現在）
+                    def _mat3_t_mul_vec3(m: list[float], v: list[float]) -> list[float]:
+                        # Webots getOrientation() は 3x3 行列（row-major）。local->world を与えるので、
+                        # world->local は転置を用いる。
+                        return [
+                            m[0] * v[0] + m[3] * v[1] + m[6] * v[2],
+                            m[1] * v[0] + m[4] * v[1] + m[7] * v[2],
+                            m[2] * v[0] + m[5] * v[1] + m[8] * v[2],
+                        ]
+
+                    # 姿勢（ログ用）
                     ori = list(self.spot_node.getOrientation())
                     roll, pitch, yaw = _rpy_rad_from_orientation_matrix(ori)
                     rpy_deg = (math.degrees(roll), math.degrees(pitch), math.degrees(yaw))
 
-                    if state.get("init_rpy") is None:
-                        state["init_rpy"] = (roll, pitch, yaw)
+                    # 足先近傍リンク（forearm Solid）のワールド位置を優先
+                    foot_world = None
+                    foot_is_world = False
+                    try:
+                        foot_node = self._foot_solid_by_leg.get(leg_id)
+                        if foot_node is not None:
+                            foot_world = list(foot_node.getPosition())
+                            foot_is_world = True
+                    except Exception:
+                        foot_world = None
+                        foot_is_world = False
 
-                    init_roll, init_pitch, _ = state["init_rpy"]
-                    delta_roll = roll - init_roll
-                    delta_pitch = pitch - init_pitch
+                    # フォールバック（FK）: 既存の近似（胴体ローカル）
+                    if foot_world is None or len(foot_world) < 3:
+                        x_local, y_local, z_local = _fk_foot_local(leg_id, angles)
+                        foot_world = [float(x_local), float(y_local), float(z_local)]
+                        foot_is_world = False
 
-                    # 足先位置（胴体ローカル）
-                    x_local, y_local, z_local = _fk_foot_local(leg_id, angles)
+                    # end_positions は「初期足先位置からの変位ベクトル」系列。
+                    # 以前は base の平行移動・回転を毎フレーム除去して胴体ローカル差分を作っていたが、
+                    # base姿勢が大きく変わる（転倒/傾き）と座標系が揺れて end_disp が過大になり、
+                    # TRAPPED/BURIED でも drone_can が高止まりする原因になった。
+                    # ここでは Foot Solid が取れている場合は foot(world) の変位をそのまま使い、
+                    # 拘束時に「足先が世界座標で動いていない」ことが can に反映されるようにする。
 
-                    # 胴体の傾き変化を補正（転倒/傾きで見かけの変位が変わるのを抑える）
-                    x_local, y_local, z_local = _compensate_for_body_tilt(
-                        x_local, y_local, z_local, delta_roll, delta_pitch
-                    )
+                    if foot_is_world:
+                        foot_disp_src = [float(foot_world[0]), float(foot_world[1]), float(foot_world[2])]
+                    else:
+                        # FKフォールバック時は従来通り（胴体ローカル近似）
+                        foot_disp_src = [float(foot_world[0]), float(foot_world[1]), float(foot_world[2])]
 
-                    if state["init_foot"] is None:
-                        state["init_foot"] = (x_local, y_local, z_local)
+                    # ベースライン（中央値）を確定してから end_disp を記録する
+                    if state.get("init_foot") is None:
+                        samples = state.get("foot_samples")
+                        if not isinstance(samples, list):
+                            samples = []
+                            state["foot_samples"] = samples
+                        samples.append((float(foot_disp_src[0]), float(foot_disp_src[1]), float(foot_disp_src[2])))
+                        if len(samples) < max(1, self._baseline_frames):
+                            continue
 
-                    init_x, init_y, init_z = state["init_foot"]
-                    end_disp = [x_local - init_x, y_local - init_y, z_local - init_z]
+                        xs = sorted(p[0] for p in samples)
+                        ys = sorted(p[1] for p in samples)
+                        zs = sorted(p[2] for p in samples)
+                        mid = len(samples) // 2
+                        state["init_foot"] = (xs[mid], ys[mid], zs[mid])
+                        try:
+                            del state["foot_samples"]
+                        except Exception:
+                            pass
+
+                    init_foot = state.get("init_foot")
+                    if not isinstance(init_foot, tuple) or len(init_foot) != 3:
+                        continue
+                    init_x, init_y, init_z = init_foot
+                    end_disp = [float(foot_disp_src[0]) - init_x, float(foot_disp_src[1]) - init_y, float(foot_disp_src[2]) - init_z]
 
                     self.pipeline.record_robo_pose_frame(
                         leg_id=leg_id,
@@ -386,6 +798,8 @@ class DroneCircularController:
                 spot_tau_avg=float(self_diag.get("tau_avg") or 0.0),
                 spot_tau_max=float(self_diag.get("tau_max") or 0.0),
                 spot_malfunction_flag=int(self_diag.get("malfunction_flag") or 0),
+                trial_angle_deg_effective=state.get("trial_angle_deg_effective"),
+                world_env_hint=self._world_env_hint_by_leg.get(leg_id),
             )
 
             self.trials_completed[leg_id] = self.trials_completed.get(leg_id, 0) + 1
@@ -454,6 +868,15 @@ class DroneCircularController:
 
     def run(self) -> None:
         while self.supervisor.step(self.time_step) != -1:
+            # 終了要求が来たら、できるだけ早くログを残して終了する
+            if self._terminate_requested and not self._finalized:
+                try:
+                    self.pipeline.finalize()
+                except Exception:
+                    pass
+                self._finalized = True
+                break
+
             self.process_messages()
             self._maybe_complete_trials()
             self.update_position()
@@ -486,6 +909,14 @@ class DroneCircularController:
                         if not self._quit_error_printed:
                             print(f"[drone_new] warn: simulationQuit failed: {exc}")
                             self._quit_error_printed = True
+
+        # step() が -1 で抜けるケースでも、ログ未出力を避けるため軽量finalizeを試みる
+        if not self._finalized:
+            try:
+                os.environ.setdefault("QWEN_ENABLE", "0")
+                self.pipeline.finalize()
+            except Exception:
+                pass
 
 
 def main() -> None:

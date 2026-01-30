@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""result10
+
+run10_webots の出力JSON（benchmarks/run10_webots/run_*.json）と
+controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl を突合し、
+各回の Accuracy と平均を表示する。
+
+使い方:
+  ./result10
+  ./result10 --file benchmarks/run10_webots/run_YYYYmmdd_HHMMSS_seedX.json
+
+注意:
+- 1回の run_webots 実行につき、sessions.jsonl に1セッション追記される想定。
+- expected（FL/FR/RL/RR）が同一のセッションが複数ある場合は、開始時刻付近のものを優先する。
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
+
+ROOT = Path(__file__).resolve().parent
+DEFAULT_RUN_DIR = ROOT / "benchmarks" / "run10_webots"
+DEFAULT_SESSIONS = ROOT / "controllers" / "drone_circular_controller" / "logs" / "leg_diagnostics_sessions.jsonl"
+
+LEG_IDS = ["FL", "FR", "RL", "RR"]
+
+
+def _read_json(path: Path) -> dict:
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _read_jsonl(path: Path) -> list[dict]:
+    if not path.exists():
+        return []
+    items: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            items.append(json.loads(line))
+        except Exception:
+            continue
+    return items
+
+
+def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(ts)
+    except Exception:
+        return None
+
+
+def _pick_latest_run_file(run_dir: Path) -> Optional[Path]:
+    if not run_dir.exists():
+        return None
+    files = sorted(run_dir.glob("run_*.json"), key=lambda p: p.stat().st_mtime)
+    return files[-1] if files else None
+
+
+def _expected_from_session(session: dict) -> Dict[str, str]:
+    legs = session.get("legs", {}) or {}
+    out: Dict[str, str] = {}
+    for leg in LEG_IDS:
+        entry = legs.get(leg, {}) or {}
+        out[leg] = str(entry.get("expected_cause", ""))
+    return out
+
+
+def _accuracy_from_session(session: dict) -> Tuple[int, int, Dict[str, Dict[str, Any]]]:
+    legs = session.get("legs", {}) or {}
+    correct = 0
+    total = 0
+    per_leg: Dict[str, Dict[str, Any]] = {}
+    for leg in LEG_IDS:
+        entry = legs.get(leg, {}) or {}
+        exp = str(entry.get("expected_cause", ""))
+        got = str(entry.get("cause_final", ""))
+        ok = (exp == got) and exp != ""
+        total += 1
+        if ok:
+            correct += 1
+        per_leg[leg] = {"expected": exp, "got": got, "correct": ok}
+    return correct, total, per_leg
+
+
+def _details_from_session(session: dict) -> Dict[str, Dict[str, Any]]:
+    legs = session.get("legs", {}) or {}
+    out: Dict[str, Dict[str, Any]] = {}
+    for leg in LEG_IDS:
+        e = legs.get(leg, {}) or {}
+        qwen_used = e.get("qwen_used")
+        if qwen_used is True:
+            qwen_source = "qwen"
+        elif qwen_used is False:
+            qwen_source = "uniform_fallback"
+        else:
+            qwen_source = "missing"
+        out[leg] = {
+            "expected": str(e.get("expected_cause", "")),
+            "cause_final": str(e.get("cause_final", "")),
+            "movement_result": e.get("movement_result"),
+            "spot_can": e.get("spot_can"),
+            "drone_can": e.get("drone_can"),
+            "qwen_used": e.get("qwen_used"),
+            "qwen_status": e.get("qwen_status"),
+            "qwen_source": qwen_source,
+            "p_drone": e.get("p_drone"),
+            "p_qwen": e.get("p_qwen"),
+            "p_llm": e.get("p_llm"),
+            "p_rule": e.get("p_rule"),
+        }
+    return out
+
+
+def _find_matching_session(
+    sessions: List[dict],
+    expected: Dict[str, str],
+    start_dt: Optional[datetime],
+    end_dt: Optional[datetime],
+    used_session_ids: set[str],
+) -> Optional[dict]:
+    # expected一致の候補を抽出
+    candidates: List[dict] = []
+    for s in sessions:
+        sid = str(s.get("session_id", ""))
+        if not sid or sid in used_session_ids:
+            continue
+        if _expected_from_session(s) == expected:
+            candidates.append(s)
+
+    if not candidates:
+        return None
+
+    # 時刻情報があればそれを優先
+    def ts_of(sess: dict) -> float:
+        try:
+            return float(sess.get("timestamp", 0.0))
+        except Exception:
+            return 0.0
+
+    if start_dt is not None:
+        start_epoch = start_dt.timestamp()
+        # endが無ければ「開始から十分後まで」を許容
+        end_epoch = end_dt.timestamp() if end_dt is not None else (start_epoch + 6 * 60 * 60)
+
+        # [start-30sec, end+30min] を許容範囲に
+        lo = start_epoch - 30.0
+        hi = end_epoch + 30.0 * 60.0
+        in_window = [s for s in candidates if lo <= ts_of(s) <= hi]
+        if in_window:
+            # window内で start に最も近いもの
+            return min(in_window, key=lambda s: abs(ts_of(s) - start_epoch))
+
+        # window外なら start に最も近いもの
+        return min(candidates, key=lambda s: abs(ts_of(s) - start_epoch))
+
+    # 時刻が無い場合は、最後に近い（=新しい）もの
+    return max(candidates, key=ts_of)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(prog="result10", description="run10_webots の結果をまとめて表示します")
+    parser.add_argument(
+        "--file",
+        type=str,
+        default=None,
+        help="run10_webots の出力JSONを指定（省略時は最新）",
+    )
+    parser.add_argument(
+        "--sessions",
+        type=str,
+        default=str(DEFAULT_SESSIONS),
+        help="leg_diagnostics_sessions.jsonl のパス",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="標準出力をJSON（集計結果）にする",
+    )
+    parser.add_argument(
+        "--detail",
+        action="store_true",
+        help="各回について、各脚の詳細（確率分布/動作確率/Qwen状況/動作判定）も表示する",
+    )
+
+    args = parser.parse_args()
+
+    run_file = Path(args.file) if args.file else _pick_latest_run_file(DEFAULT_RUN_DIR)
+    if not run_file or not run_file.exists():
+        print("run10_webots の結果ファイルが見つかりません。")
+        print("期待パス例:", DEFAULT_RUN_DIR)
+        sys.exit(1)
+
+    sessions_path = Path(args.sessions)
+    sessions = _read_jsonl(sessions_path)
+    if not sessions:
+        print("セッションログが見つかりませんでした:", sessions_path)
+        sys.exit(1)
+
+    data = _read_json(run_file)
+    records = data.get("records", []) or []
+    if not isinstance(records, list) or not records:
+        print("records が空です:", run_file)
+        sys.exit(1)
+
+    used: set[str] = set()
+    out_runs: List[dict] = []
+
+    sum_correct = 0
+    sum_total = 0
+    matched = 0
+
+    for r in records:
+        run_id = str(r.get("run_id", ""))
+        expected = r.get("expected", {}) or {}
+        expected = {k: str(v) for k, v in expected.items()}
+        start_dt = _parse_iso(r.get("started_at"))
+        end_dt = _parse_iso(r.get("ended_at"))
+
+        sess = _find_matching_session(sessions, expected, start_dt, end_dt, used)
+        if sess is None:
+            out_runs.append(
+                {
+                    "run_id": run_id,
+                    "expected": expected,
+                    "session_id": None,
+                    "accuracy": None,
+                    "correct": None,
+                    "total": 4,
+                    "per_leg": None,
+                    "per_leg_detail": None,
+                }
+            )
+            continue
+
+        sid = str(sess.get("session_id", ""))
+        used.add(sid)
+        correct, total, per_leg = _accuracy_from_session(sess)
+        per_leg_detail = _details_from_session(sess)
+        sum_correct += correct
+        sum_total += total
+        matched += 1
+
+        out_runs.append(
+            {
+                "run_id": run_id,
+                "expected": expected,
+                "session_id": sid,
+                "accuracy": correct / total if total else None,
+                "correct": correct,
+                "total": total,
+                "per_leg": per_leg,
+                "per_leg_detail": per_leg_detail,
+            }
+        )
+
+    summary = {
+        "schema": "result10/v1",
+        "run_file": str(run_file),
+        "sessions_file": str(sessions_path),
+        "matched": matched,
+        "runs": len(records),
+        "total": {
+            "correct": sum_correct,
+            "total": sum_total,
+            "avg_accuracy": (sum_correct / sum_total) if sum_total else None,
+        },
+        "runs_detail": out_runs,
+    }
+
+    if args.json:
+        print(json.dumps(summary, ensure_ascii=False, indent=2))
+        return
+
+    print("run10_webots:", run_file)
+    print("sessions:", sessions_path)
+    print("\n各回の結果")
+    for item in out_runs:
+        run_id = item["run_id"]
+        sid = item["session_id"]
+        correct = item["correct"]
+        total = item["total"]
+        if sid is None:
+            print(f"- {run_id}: session未特定（expected={item['expected']})")
+            continue
+        print(f"- {run_id}: {correct}/{total}  session={sid}")
+
+        if args.detail:
+            detail = item.get("per_leg_detail") or {}
+            for leg in LEG_IDS:
+                d = detail.get(leg, {}) or {}
+                print(
+                    f"  {leg}: exp={d.get('expected')} got={d.get('cause_final')} move={d.get('movement_result')} "
+                    f"spot_can={d.get('spot_can')} drone_can={d.get('drone_can')} "
+                    f"qwen_source={d.get('qwen_source')} qwen_used={d.get('qwen_used')} qwen_status={d.get('qwen_status')}"
+                )
+                print(f"    p_drone={d.get('p_drone')}")
+                print(f"    p_qwen ={d.get('p_qwen')}")
+                print(f"    p_llm  ={d.get('p_llm')}")
+                print(f"    p_rule ={d.get('p_rule')}")
+
+    if sum_total:
+        print(f"\n平均Accuracy: {sum_correct}/{sum_total} = {sum_correct / sum_total:.3f}")
+    else:
+        print("\n平均Accuracy: 計算不可（セッション未特定）")
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,313 @@
+研究結果fin（run10_webots：Qwen動作確認）
+作成日: 2026-01-30
+
+====================================================================
+1. 対象実験の特定（どの実行でQwenが動いたか）
+====================================================================
+目的:
+- run10_webots（10回×4脚=40判定）を実行し、Qwenが「確実に動作（ロード→推論→パース→記録）」していることを確認する。
+
+対象実行（run10_webotsの出力JSON）:
+- webots_new/benchmarks/run10_webots/run_20260125_155045_seed1870392833.json
+
+参照した詳細セッション（JSONL）:
+- webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl
+
+補足（実行時に明示した設定）:
+- Qwen有効化: --qwen-enable
+- GGUF指定:  --qwen-gguf-path /home/kk21053/sotuken/models/qwen/Qwen2.5-3B-Instruct-IQ4_XS.gguf
+- run10_webots実行（例）:
+  - cd webots_new
+  - QWEN_MAX_TOKENS_BATCH=1024 QWEN_MAX_TOKENS_BATCH_RETRY=1536 \
+    ./run10_webots --runs 10 --timeout-sec 1800 --kill-stale-webots --continue-on-error --capture-logs \
+    --qwen-enable --qwen-gguf-path /home/kk21053/sotuken/models/qwen/Qwen2.5-3B-Instruct-IQ4_XS.gguf
+
+====================================================================
+2. 実験の概要（何を評価しているか）
+====================================================================
+本確認で見たいこと（合否条件）:
+- 40/40 で qwen_status == "ok"
+- 40/40 で qwen_used == True
+
+ログ上の確認方法:
+- sessions JSONL の各脚にある
+  - qwen_status（ok/disabled/no_path/import_error/load_error/parse_failed 等）
+  - qwen_used（True/False）
+  を集計して判定する。
+
+====================================================================
+3. 総合結果（Qwen動作確認の結論）
+====================================================================
+Qwen動作状況（40脚）:
+- qwen_status: ok = 40 / 40
+- qwen_used:   True = 40 / 40
+
+したがって、run10_webotsにおいてQwenは「確実に動作している」と判断できる。
+
+====================================================================
+4. run10_webotsの詳細（割り当てと対応session）
+====================================================================
+run10_webots（seed=1870392833）の10回分の割り当てと、対応するsession_id:
+
+- R01 session=drone_20260125_155049: FL=BURIED      FR=MALFUNCTION  RL=TRAPPED     RR=MALFUNCTION
+- R02 session=drone_20260125_155830: FL=TRAPPED     FR=TANGLED      RL=MALFUNCTION  RR=MALFUNCTION
+- R03 session=drone_20260125_160143: FL=TRAPPED     FR=TANGLED      RL=BURIED       RR=MALFUNCTION
+- R04 session=drone_20260125_160533: FL=TANGLED     FR=MALFUNCTION  RL=TRAPPED      RR=MALFUNCTION
+- R05 session=drone_20260125_160834: FL=TANGLED     FR=NONE         RL=MALFUNCTION  RR=TRAPPED
+- R06 session=drone_20260125_161133: FL=TANGLED     FR=TRAPPED      RL=TANGLED      RR=NONE
+- R07 session=drone_20260125_162615: FL=TANGLED     FR=TANGLED      RL=MALFUNCTION  RR=NONE
+- R08 session=drone_20260125_162834: FL=MALFUNCTION FR=NONE         RL=BURIED       RR=BURIED
+- R09 session=drone_20260125_163134: FL=MALFUNCTION FR=TANGLED      RL=BURIED       RR=BURIED
+- R10 session=drone_20260125_163443: FL=TANGLED     FR=MALFUNCTION  RL=NONE         RR=MALFUNCTION
+
+====================================================================
+5. 参考: 正解率（expected_cause vs cause_final）
+====================================================================
+本run10_webotsは本来「Qwen稼働確認」が主目的だが、参考として expected_cause と cause_final の一致率も集計した。
+
+- 最終（cause_final）精度: 39/40 = 0.975
+- Drone top1（p_droneの最大ラベル）: 40/40 = 1.000
+- Qwen top1（p_qwenの最大ラベル）: 33/40 = 0.825
+
+補足:
+- 今回のログでは、p_drone が非常に強い one-hot 近似（最大0.92）になっている脚が多く、Droneだけで40/40になっている。
+
+====================================================================
+6. 不一致の詳細（1件）
+====================================================================
+最終不一致は1件のみ。
+
+- session=drone_20260125_162834, leg=FR
+  - expected_cause: NONE
+  - cause_final:    BURIED
+  - movement_result: 動かない
+  - spot_can=0.242, drone_can=0.951
+
+ただし、このケースは分布が以下の通りで、分布の最大は一貫して NONE である:
+- p_drone: NONE=0.92
+- p_qwen:  NONE=0.92
+- p_llm:   NONE=0.92
+- p_rule:  NONE=0.92
+
+にもかかわらず cause_rule/cause_final が BURIED になっているため、
+「分布の最大を取る部分（cause_final/cause_ruleの決め方）に不整合がある可能性」が高い。
+（Qwenの稼働可否とは別問題）
+
+====================================================================
+7. 実装上の補足（今回の“確実に動く”に寄与した点）
+====================================================================
+今回のrun10_webotsで qwen_status=ok を安定して出せるように、以下を実施した:
+
+- モデルファイルの配置
+  - /home/kk21053/sotuken/models/qwen/Qwen2.5-3B-Instruct-IQ4_XS.gguf
+
+- QWEN_GGUF_PATH の相対パス問題を吸収（パス正規化）
+- Qwen出力パースの安定化
+  - バッチ推論で出力が途中で切れてparse_failedになるケースがあったため、
+    - バッチトークン上限の引き上げ
+    - それでも失敗した脚は1脚推論にフォールバック
+  を追加し、run10_webotsでは40/40でokを達成した。
+
+====================================================================
+8. 再現のための最低限メモ
+====================================================================
+- 実行ディレクトリ: webots_new/
+- 実行例:
+  - QWEN_MAX_TOKENS_BATCH=1024 QWEN_MAX_TOKENS_BATCH_RETRY=1536 \
+    ./run10_webots --runs 10 --timeout-sec 1800 --kill-stale-webots --continue-on-error --capture-logs \
+    --qwen-enable --qwen-gguf-path /home/kk21053/sotuken/models/qwen/Qwen2.5-3B-Instruct-IQ4_XS.gguf
+
+- 確認箇所:
+  - webots_new/controllers/drone_circular_controller/logs/leg_diagnostics_sessions.jsonl
+    - qwen_status（40/40でok）
+    - qwen_used（40/40でTrue）
+
+以上。
+
+
+  ====================================================================
+  9. 詳細ログ抜粋（run別・脚別の一覧）
+  ====================================================================
+  表記:
+  - expected=expected_cause / final=cause_final / move=movement_result
+  - top2(p_drone/p_qwen/p_llm) は上位2ラベル（確率）
+
+  [R01] session=drone_20260125_155049（割り当て: FL=BURIED FR=MALFUNCTION RL=TRAPPED RR=MALFUNCTION）
+  - FL: qwen_status=ok used=True spot_can=0.036 drone_can=0.014 p_can=0.025 move=動かない expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, TANGLED:0.020
+    top2(p_qwen)=MALFUNCTION:1.000, NONE:0.000
+    top2(p_llm)=BURIED:0.644, MALFUNCTION:0.314
+  - FR: qwen_status=ok used=True spot_can=0.999 drone_can=0.149 p_can=0.574 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+  - RL: qwen_status=ok used=True spot_can=0.994 drone_can=0.989 p_can=0.991 move=動く expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TRAPPED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.999 drone_can=0.003 p_can=0.501 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:1.000, NONE:0.000
+    top2(p_llm)=MALFUNCTION:0.944, NONE:0.014
+
+  [R02] session=drone_20260125_155830（割り当て: FL=TRAPPED FR=TANGLED RL=MALFUNCTION RR=MALFUNCTION）
+  - FL: qwen_status=ok used=True spot_can=0.868 drone_can=0.476 p_can=0.672 move=一部動く expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TRAPPED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.557 drone_can=0.118 p_can=0.338 move=一部動く expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - RL: qwen_status=ok used=True spot_can=0.999 drone_can=0.000 p_can=0.500 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.650, TANGLED:0.290
+  - RR: qwen_status=ok used=True spot_can=0.999 drone_can=0.000 p_can=0.500 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.650, TANGLED:0.290
+
+  [R03] session=drone_20260125_160143（割り当て: FL=TRAPPED FR=TANGLED RL=BURIED RR=MALFUNCTION）
+  - FL: qwen_status=ok used=True spot_can=0.523 drone_can=0.723 p_can=0.623 move=一部動く expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TRAPPED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.117 drone_can=0.004 p_can=0.061 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - RL: qwen_status=ok used=True spot_can=0.157 drone_can=0.981 p_can=0.569 move=動かない expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=BURIED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.999 drone_can=0.027 p_can=0.513 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+
+  [R04] session=drone_20260125_160533（割り当て: FL=TANGLED FR=MALFUNCTION RL=TRAPPED RR=MALFUNCTION）
+  - FL: qwen_status=ok used=True spot_can=0.029 drone_can=0.003 p_can=0.016 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.999 drone_can=0.006 p_can=0.503 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+  - RL: qwen_status=ok used=True spot_can=0.021 drone_can=0.001 p_can=0.011 move=動かない expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TRAPPED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.999 drone_can=0.000 p_can=0.500 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+
+  [R05] session=drone_20260125_160834（割り当て: FL=TANGLED FR=NONE RL=MALFUNCTION RR=TRAPPED）
+  - FL: qwen_status=ok used=True spot_can=0.048 drone_can=0.001 p_can=0.025 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.215 drone_can=0.496 p_can=0.356 move=一部動く expected=NONE final=NONE
+    top2(p_drone)=NONE:0.920, BURIED:0.020
+    top2(p_qwen)=NONE:0.920, BURIED:0.020
+    top2(p_llm)=NONE:0.920, BURIED:0.020
+  - RL: qwen_status=ok used=True spot_can=0.999 drone_can=0.006 p_can=0.503 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.650, TANGLED:0.290
+  - RR: qwen_status=ok used=True spot_can=0.053 drone_can=0.005 p_can=0.029 move=動かない expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TRAPPED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.920, NONE:0.020
+
+  [R06] session=drone_20260125_161133（割り当て: FL=TANGLED FR=TRAPPED RL=TANGLED RR=NONE）
+  - FL: qwen_status=ok used=True spot_can=0.003 drone_can=0.000 p_can=0.002 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.157 drone_can=0.001 p_can=0.079 move=動かない expected=TRAPPED final=TRAPPED
+    top2(p_drone)=TRAPPED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TRAPPED:0.650, TANGLED:0.290
+  - RL: qwen_status=ok used=True spot_can=0.003 drone_can=0.000 p_can=0.002 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.995 drone_can=0.893 p_can=0.944 move=動く expected=NONE final=NONE
+    top2(p_drone)=NONE:0.920, BURIED:0.020
+    top2(p_qwen)=NONE:0.920, BURIED:0.020
+    top2(p_llm)=NONE:0.920, BURIED:0.020
+
+  [R07] session=drone_20260125_162615（割り当て: FL=TANGLED FR=TANGLED RL=MALFUNCTION RR=NONE）
+  - FL: qwen_status=ok used=True spot_can=0.010 drone_can=0.001 p_can=0.005 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.015 drone_can=0.001 p_can=0.008 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.920, NONE:0.020
+  - RL: qwen_status=ok used=True spot_can=0.999 drone_can=0.000 p_can=0.500 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.650, TANGLED:0.290
+  - RR: qwen_status=ok used=True spot_can=0.995 drone_can=0.958 p_can=0.977 move=動く expected=NONE final=NONE
+    top2(p_drone)=NONE:0.920, BURIED:0.020
+    top2(p_qwen)=NONE:0.920, BURIED:0.020
+    top2(p_llm)=NONE:0.920, BURIED:0.020
+
+  [R08] session=drone_20260125_162834（割り当て: FL=MALFUNCTION FR=NONE RL=BURIED RR=BURIED）
+  - FL: qwen_status=ok used=True spot_can=0.999 drone_can=0.020 p_can=0.509 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.242 drone_can=0.951 p_can=0.597 move=動かない expected=NONE final=BURIED
+    top2(p_drone)=NONE:0.920, BURIED:0.020
+    top2(p_qwen)=NONE:0.920, BURIED:0.020
+    top2(p_llm)=NONE:0.920, BURIED:0.020
+  - RL: qwen_status=ok used=True spot_can=0.029 drone_can=0.019 p_can=0.024 move=動かない expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=BURIED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.077 drone_can=0.405 p_can=0.241 move=一部動く expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=BURIED:0.920, NONE:0.020
+
+  [R09] session=drone_20260125_163134（割り当て: FL=MALFUNCTION FR=TANGLED RL=BURIED RR=BURIED）
+  - FL: qwen_status=ok used=True spot_can=0.999 drone_can=0.005 p_can=0.502 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_llm)=MALFUNCTION:0.920, NONE:0.020
+  - FR: qwen_status=ok used=True spot_can=0.052 drone_can=0.085 p_can=0.068 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=TANGLED:0.650, BURIED:0.290
+  - RL: qwen_status=ok used=True spot_can=0.945 drone_can=0.723 p_can=0.834 move=動く expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=BURIED:0.920, NONE:0.020
+  - RR: qwen_status=ok used=True spot_can=0.994 drone_can=0.949 p_can=0.971 move=動く expected=BURIED final=BURIED
+    top2(p_drone)=BURIED:0.920, NONE:0.020
+    top2(p_qwen)=BURIED:0.920, NONE:0.020
+    top2(p_llm)=BURIED:0.920, NONE:0.020
+
+  [R10] session=drone_20260125_163443（割り当て: FL=TANGLED FR=MALFUNCTION RL=NONE RR=MALFUNCTION）
+  - FL: qwen_status=ok used=True spot_can=0.054 drone_can=0.009 p_can=0.031 move=動かない expected=TANGLED final=TANGLED
+    top2(p_drone)=TANGLED:0.920, NONE:0.020
+    top2(p_qwen)=TANGLED:0.979, MALFUNCTION:0.021
+    top2(p_llm)=TANGLED:0.938, MALFUNCTION:0.020
+  - FR: qwen_status=ok used=True spot_can=0.999 drone_can=0.001 p_can=0.500 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:1.000, NONE:0.000
+    top2(p_llm)=MALFUNCTION:0.944, NONE:0.014
+  - RL: qwen_status=ok used=True spot_can=0.992 drone_can=0.957 p_can=0.974 move=動く expected=NONE final=NONE
+    top2(p_drone)=NONE:0.920, BURIED:0.020
+    top2(p_qwen)=NONE:0.920, BURIED:0.020
+    top2(p_llm)=NONE:0.920, BURIED:0.020
+  - RR: qwen_status=ok used=True spot_can=0.999 drone_can=0.003 p_can=0.501 move=動かない expected=MALFUNCTION final=MALFUNCTION
+    top2(p_drone)=MALFUNCTION:0.920, NONE:0.020
+    top2(p_qwen)=MALFUNCTION:1.000, NONE:0.000
+    top2(p_llm)=MALFUNCTION:0.944, NONE:0.014
